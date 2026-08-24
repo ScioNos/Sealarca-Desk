@@ -1,0 +1,136 @@
+/**
+ * Sealarca-Desk — Thème & Variables Sémantiques Officielles
+ * Directement aligné avec la charte graphique de sealarca.ch
+ */
+
+:root {
+    color-scheme: light;
+    /* --- Palette Sémantique Officielle Sealarca (Mode Clair) --- */
+    --sealarca-paper: #F6F8F7;
+    --sealarca-paper-muted: #EEF3F0;
+    --sealarca-surface: #FFFFFF;
+    --sealarca-ink: #101820;
+    --sealarca-ink-muted: #5C6973;
+    --sealarca-border: #D9E2DE;
+    --sealarca-border-subtle: #E5ECE8;
+    --sealarca-border-dark: #B8CEC4;
+
+    /* Accent vert émeraude suisse officiel */
+    --sealarca-evergreen: #087F68;
+    --sealarca-evergreen-hover: #066653;
+    --sealarca-evergreen-light: #E6F5F1;
+    --sealarca-evergreen-glow: rgba(8, 127, 104, 0.15);
+
+    /* Enclave Vault technique */
+    --sealarca-technical: #0B1216;
+    --sealarca-technical-surface: #111A1D;
+    --sealarca-technical-border: #29383D;
+    --sealarca-technical-accent: #73D6B8;
+    --sealarca-technical-text: #C8D5D6;
+
+    /* Statuts */
+    --sealarca-success: #137A52;
+    --sealarca-warning: #9A6400;
+    --sealarca-danger: #B42318;
+    --sealarca-danger-light: #FEE4E2;
+
+    /* Contrastes explicites des actions */
+    --sealarca-action: #101820;
+    --sealarca-action-text: #FFFFFF;
+    --sealarca-disabled: #D9E2DE;
+    --sealarca-disabled-text: #5C6973;
+
+    /* Typographies */
+    --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+    /* Ombres & Rayons */
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 16px;
+    --radius-full: 9999px;
+
+    --shadow-sm: 0 1px 2px rgba(16, 24, 32, 0.04);
+    --shadow-md: 0 4px 12px rgba(16, 24, 32, 0.06);
+    --shadow-lg: 0 12px 32px rgba(16, 24, 32, 0.10);
+
+    /* Dimensions */
+    --sidebar-width: 280px;
+    --header-height: 64px;
+}
+
+/* --- Mode Sombre (Dark Mode) --- */
+.dark {
+    color-scheme: dark;
+    --sealarca-paper: #09090B;
+    --sealarca-paper-muted: #18181B;
+    --sealarca-surface: #0F0F11;
+    --sealarca-ink: #FFFFFF;
+    --sealarca-ink-muted: #98989F;
+    --sealarca-border: #242426;
+    --sealarca-border-subtle: #1B1B1E;
+    --sealarca-border-dark: #3F3F46;
+
+    --sealarca-evergreen: #10A386;
+    --sealarca-evergreen-hover: #14B898;
+    --sealarca-evergreen-light: rgba(16, 163, 134, 0.15);
+    --sealarca-evergreen-glow: rgba(16, 163, 134, 0.25);
+
+    --sealarca-technical: #070B10;
+    --sealarca-technical-surface: #0D141C;
+    --sealarca-technical-border: #263545;
+    --sealarca-technical-accent: #73D6B8;
+    --sealarca-technical-text: #F3F7FA;
+
+    --sealarca-danger-light: rgba(180, 35, 24, 0.16);
+    --sealarca-action: #F4F7F6;
+    --sealarca-action-text: #101820;
+    --sealarca-disabled: #242426;
+    --sealarca-disabled-text: #98989F;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+
+[x-cloak] {
+    display: none !important;
+}
+
+/* --- Reset global & Base --- */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html, body {
+    height: 100%;
+    background-color: var(--sealarca-paper);
+    color: var(--sealarca-ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow: hidden;
+}
+
+/* Scrollbars fines et élégantes */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--sealarca-border);
+    border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--sealarca-ink-muted);
+}

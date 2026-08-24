@@ -1,0 +1,18 @@
+# Fichiers et dossiers internes de conception
+.internal/
+_internal/
+
+# Fichiers temporaires système & OS
+.DS_Store
+Thumbs.db
+desktop.ini
+*.tmp
+*.bak
+
+# Fichiers d'environnement & logs locaux
+*.log
+.env
+.env.local
+
+# Artefacts de publication générés localement
+.release/

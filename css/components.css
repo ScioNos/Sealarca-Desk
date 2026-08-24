@@ -1,0 +1,477 @@
+/**
+ * Sealarca-Desk — Composants d'interface (Components)
+ * Bulles de messages, Markdown, Blocs de Code, Formulaires et Tiroir de Raisonnement.
+ */
+
+/* ==========================================================================
+   1. Messages de Chat
+   ========================================================================== */
+.message-row {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+}
+
+.message-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--sealarca-ink-muted);
+    padding: 0 4px;
+}
+
+.message-sender {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.message-sender-avatar {
+    width: 20px;
+    height: 20px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+}
+
+.message-sender-avatar.assistant {
+    background-color: var(--sealarca-evergreen);
+    color: #FFFFFF;
+}
+
+.message-sender-avatar.user {
+    background-color: var(--sealarca-ink);
+    color: #FFFFFF;
+}
+
+.message-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.message-row:hover .message-actions {
+    opacity: 1;
+}
+
+.msg-action-btn {
+    background: transparent;
+    border: 1px solid var(--sealarca-border);
+    border-radius: 4px;
+    padding: 3px 6px;
+    font-size: 11px;
+    color: var(--sealarca-ink-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.12s ease;
+}
+
+.msg-action-btn:hover {
+    color: var(--sealarca-ink);
+    background-color: var(--sealarca-surface);
+    border-color: var(--sealarca-border-dark);
+}
+
+/* Corps du message */
+.message-bubble {
+    border-radius: var(--radius-md);
+    padding: 16px 18px;
+    line-height: 1.6;
+    font-size: 14px;
+    position: relative;
+    word-break: break-word;
+}
+
+.message-row.user .message-bubble {
+    background-color: var(--sealarca-paper-muted);
+    border: 1px solid var(--sealarca-border);
+    color: var(--sealarca-ink);
+    align-self: flex-start;
+    width: 100%;
+}
+
+.message-row.assistant .message-bubble {
+    background-color: var(--sealarca-surface);
+    border: 1px solid var(--sealarca-border);
+    box-shadow: var(--shadow-sm);
+    color: var(--sealarca-ink);
+    width: 100%;
+}
+
+/* Pièces jointes dans le message utilisateur */
+.msg-attachments-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--sealarca-border);
+}
+
+.msg-attachment-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    background-color: var(--sealarca-surface);
+    border: 1px solid var(--sealarca-border);
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--sealarca-ink);
+}
+
+/* ==========================================================================
+   2. Bloc de Réflexion / Raisonnement (Thinking Drawer)
+   ========================================================================== */
+.reasoning-box {
+    margin-bottom: 12px;
+    border: 1px solid var(--sealarca-technical-border);
+    background-color: var(--sealarca-technical);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.reasoning-toggle {
+    width: 100%;
+    padding: 8px 12px;
+    background: transparent;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--sealarca-technical-accent);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+}
+
+.reasoning-toggle:hover {
+    background-color: rgba(255, 255, 255, 0.03);
+}
+
+.reasoning-content {
+    padding: 10px 12px;
+    border-top: 1px solid var(--sealarca-technical-border);
+    color: var(--sealarca-technical-text);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    font-family: var(--font-mono);
+    max-height: 250px;
+    overflow-y: auto;
+}
+
+/* ==========================================================================
+   3. Formatage Markdown (Typographie dans les messages)
+   ========================================================================== */
+.markdown-body {
+    line-height: 1.65;
+    color: var(--sealarca-ink);
+}
+
+.markdown-body > *:first-child {
+    margin-top: 0;
+}
+
+.markdown-body > *:last-child {
+    margin-bottom: 0;
+}
+
+.markdown-body p {
+    margin-bottom: 12px;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4 {
+    color: var(--sealarca-ink);
+    font-weight: 700;
+    margin-top: 20px;
+    margin-bottom: 10px;
+    letter-spacing: -0.015em;
+}
+
+.markdown-body h1 { font-size: 20px; border-bottom: 1px solid var(--sealarca-border); padding-bottom: 6px; }
+.markdown-body h2 { font-size: 17px; }
+.markdown-body h3 { font-size: 15px; }
+.markdown-body h4 { font-size: 14px; }
+
+.markdown-body ul,
+.markdown-body ol {
+    margin-bottom: 12px;
+    padding-left: 22px;
+}
+
+.markdown-body li {
+    margin-bottom: 4px;
+}
+
+.markdown-body blockquote {
+    margin: 12px 0;
+    padding: 8px 14px;
+    border-left: 3px solid var(--sealarca-evergreen);
+    background-color: var(--sealarca-paper-muted);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    color: var(--sealarca-ink-muted);
+    font-style: italic;
+}
+
+.markdown-body hr {
+    border: none;
+    border-top: 1px solid var(--sealarca-border);
+    margin: 18px 0;
+}
+
+.markdown-body code:not(pre code) {
+    background-color: var(--sealarca-paper-muted);
+    border: 1px solid var(--sealarca-border);
+    color: var(--sealarca-evergreen);
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+}
+
+/* Tableaux Markdown */
+.markdown-body table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0;
+    font-size: 13px;
+    overflow-x: auto;
+    display: block;
+}
+
+.markdown-body th,
+.markdown-body td {
+    padding: 8px 12px;
+    border: 1px solid var(--sealarca-border);
+    text-align: left;
+}
+
+.markdown-body th {
+    background-color: var(--sealarca-paper-muted);
+    font-weight: 600;
+    color: var(--sealarca-ink);
+}
+
+.markdown-body tr:nth-child(even) {
+    background-color: rgba(0, 0, 0, 0.015);
+}
+
+.dark .markdown-body tr:nth-child(even) {
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+/* Blocs de Code Stylisés */
+.code-block-wrapper {
+    margin: 14px 0;
+    border: 1px solid var(--sealarca-technical-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background-color: var(--sealarca-technical);
+}
+
+.code-block-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    background-color: var(--sealarca-technical-surface);
+    border-bottom: 1px solid var(--sealarca-technical-border);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--sealarca-technical-accent);
+}
+
+.code-copy-btn {
+    background: transparent;
+    border: none;
+    color: var(--sealarca-technical-text);
+    cursor: pointer;
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+}
+
+.code-copy-btn:hover {
+    color: #FFFFFF;
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.code-block-wrapper pre {
+    margin: 0;
+    padding: 12px 14px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.5;
+    color: #F4F7F6;
+}
+
+/* ==========================================================================
+   4. Formulaires, Boutons & Contrôles
+   ========================================================================== */
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.form-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--sealarca-ink);
+}
+
+.form-hint {
+    font-size: 11px;
+    color: var(--sealarca-ink-muted);
+}
+
+.form-input,
+.form-select,
+.form-textarea {
+    width: 100%;
+    padding: 9px 12px;
+    background-color: var(--sealarca-paper-muted);
+    border: 1px solid var(--sealarca-border);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-family: var(--font-sans);
+    color: var(--sealarca-ink);
+    outline: none;
+    transition: border-color 0.15s ease;
+}
+
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus {
+    border-color: var(--sealarca-evergreen);
+    background-color: var(--sealarca-surface);
+}
+
+.api-key-field-row {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+}
+
+.api-key-field-row .form-input {
+    flex: 1;
+    min-width: 0;
+}
+
+.api-key-toggle {
+    flex: 0 0 42px;
+    padding: 8px;
+}
+
+/* Boutons */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border: 1px solid transparent;
+}
+
+.btn:focus-visible {
+    outline: 2px solid var(--sealarca-evergreen);
+    outline-offset: 2px;
+}
+
+.btn:disabled {
+    cursor: not-allowed;
+}
+
+.btn-primary {
+    background-color: var(--sealarca-action);
+    color: var(--sealarca-action-text);
+}
+
+.btn-primary:hover:not(:disabled) {
+    background-color: var(--sealarca-evergreen);
+    color: #FFFFFF;
+}
+
+.btn-primary:disabled {
+    background-color: var(--sealarca-disabled);
+    color: var(--sealarca-disabled-text);
+    border-color: var(--sealarca-border);
+}
+
+.btn-secondary {
+    background-color: var(--sealarca-surface);
+    border-color: var(--sealarca-border);
+    color: var(--sealarca-ink);
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background-color: var(--sealarca-paper);
+    border-color: var(--sealarca-border-dark);
+}
+
+.btn-secondary:disabled {
+    background-color: var(--sealarca-paper-muted);
+    color: var(--sealarca-disabled-text);
+    border-color: var(--sealarca-border);
+}
+
+.btn-danger {
+    background-color: var(--sealarca-danger);
+    color: #FFFFFF;
+}
+
+.btn-danger:hover {
+    opacity: 0.9;
+}
+
+/* Indicateur de chargement / pulsation */
+.typing-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+}
+
+.typing-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--sealarca-evergreen);
+    animation: typingPulse 1.4s infinite ease-in-out both;
+}
+
+.typing-dot:nth-child(1) { animation-delay: -0.32s; }
+.typing-dot:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes typingPulse {
+    0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+    40% { transform: scale(1); opacity: 1; }
+}
