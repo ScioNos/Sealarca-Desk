@@ -31,7 +31,18 @@ $archivePath = Join-Path $releaseRoot $archiveName
 $checksumPath = Join-Path $releaseRoot "Sealarca-Desk-v$Version.sha256"
 
 Compress-Archive -LiteralPath $bundleRoot -DestinationPath $archivePath -CompressionLevel Optimal
-$hash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+$sha256 = [System.Security.Cryptography.SHA256]::Create()
+try {
+    $stream = [System.IO.File]::OpenRead($archivePath)
+    try {
+        $hashBytes = $sha256.ComputeHash($stream)
+    } finally {
+        $stream.Dispose()
+    }
+} finally {
+    $sha256.Dispose()
+}
+$hash = ([System.BitConverter]::ToString($hashBytes) -replace '-', '').ToLowerInvariant()
 Set-Content -LiteralPath $checksumPath -Value "$hash  $archiveName" -Encoding ascii
 
 Remove-Item -LiteralPath $stagingRoot -Recurse -Force
