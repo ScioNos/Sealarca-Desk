@@ -5,7 +5,8 @@
 **Cliente de Escritorio y Web Local Autónomo para la Pasarela de IA Suiza [Sealarca](https://sealarca.ch)**  
 *IA en una bóveda digital para datos altamente confidenciales y regulados.*
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-087F68.svg)](LICENSE)
+[![License: PolyForm Perimeter 1.0.1](https://img.shields.io/badge/License-PolyForm%20Perimeter%201.0.1-087F68.svg)](LICENSE)
+[![Release: v1.0.0](https://img.shields.io/badge/Release-v1.0.0-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.0.0)
 [![Zero-Install](https://img.shields.io/badge/Instalaci%C3%B3n-0%20Install-101820.svg)](#-inicio-r%C3%A1pido)
 [![Offline-Ready](https://img.shields.io/badge/Dependencias-100%25%20Local-137A52.svg)](#-arquitectura-y-confidencialidad)
 
@@ -27,6 +28,8 @@ La aplicación se ejecuta **íntegramente en el navegador local de su equipo**, 
 ---
 
 ## ✨ Características Principales
+
+* 🗂️ **Carpetas y biblioteca documental persistente**: múltiples conversaciones y documentos Markdown reutilizables por carpeta, con procedencia y selección explícita del contexto de IA por solicitud.
 
 * 🔒 **Confidencialidad y Anonimato Absolutos**:
   * Sin telemetría ni servidores intermediarios.
@@ -110,7 +113,7 @@ Sealarca-Desk/
 
 ## 📄 Licencia
 
-Este proyecto está distribuido bajo la licencia **MIT**. Consulte el archivo [LICENSE](LICENSE) para más información.
+Este proyecto **source available** se distribuye bajo la **PolyForm Perimeter License 1.0.1**. Consulte [LICENSE](LICENSE). No se presenta como software de código abierto.
 
 Copyright (c) 2026 **eyelo SA (ScioNos)** — Suiza.
 

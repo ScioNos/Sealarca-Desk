@@ -5,7 +5,8 @@
 **Eigenständiger Desktop- & Lokaler Web-Client für das Schweizer KI-Gateway [Sealarca](https://sealarca.ch)**  
 *KI im digitalen Tresor für hochsensible und regulierte Daten.*
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-087F68.svg)](LICENSE)
+[![License: PolyForm Perimeter 1.0.1](https://img.shields.io/badge/License-PolyForm%20Perimeter%201.0.1-087F68.svg)](LICENSE)
+[![Release: v1.0.0](https://img.shields.io/badge/Release-v1.0.0-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.0.0)
 [![Zero-Install](https://img.shields.io/badge/Installation-0%20Install-101820.svg)](#-schnellstart)
 [![Offline-Ready](https://img.shields.io/badge/Abh%C3%A4ngigkeiten-100%25%20Lokal-137A52.svg)](#-architektur--vertraulichkeit)
 
@@ -27,6 +28,8 @@ Die Anwendung läuft **vollständig im lokalen Browser Ihres Rechners**, benöti
 ---
 
 ## ✨ Hauptfunktionen
+
+* 🗂️ **Persistente Ordner und Dokumentenbibliothek**: mehrere Gespräche und wiederverwendbare Markdown-Dokumente je Ordner, mit Quellenbezug und expliziter Kontextauswahl pro Anfrage.
 
 * 🔒 **Absolute Vertraulichkeit & Anonymität**:
   * Keine Telemetrie, kein zwischengeschalteter Server.
@@ -110,7 +113,7 @@ Sealarca-Desk/
 
 ## 📄 Lizenz
 
-Dieses Projekt ist unter der **MIT-Lizenz** lizenziert. Weitere Informationen finden Sie in der Datei [LICENSE](LICENSE).
+Dieses **source-available** Projekt steht unter der **PolyForm Perimeter License 1.0.1**. Siehe [LICENSE](LICENSE). Es wird nicht als Open-Source-Software angeboten.
 
 Copyright (c) 2026 **eyelo SA (ScioNos)** — Schweiz.
 

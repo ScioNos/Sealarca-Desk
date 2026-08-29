@@ -1,11 +1,12 @@
 /**
  * Sealarca-Desk — Moteur de persistance locale IndexedDB
- * Base de données locale sécurisée (sealarca_desk_db)
+ * Base de données locale sécurisée (sealarca_desk_db).
  * Aucune donnée ne quitte le poste client.
  */
 
 const DB_NAME = 'sealarca_desk_db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
+const DEFAULT_FOLDER_ID = 'folder_default';
 
 class SealarcaDB {
     constructor() {
@@ -22,56 +23,154 @@ class SealarcaDB {
 
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
+                const tx = event.target.transaction;
+                const oldVersion = event.oldVersion || 0;
 
-                // 1. Store Conversations
+                let convStore;
                 if (!db.objectStoreNames.contains('conversations')) {
-                    const convStore = db.createObjectStore('conversations', { keyPath: 'id' });
+                    convStore = db.createObjectStore('conversations', { keyPath: 'id' });
                     convStore.createIndex('updatedAt', 'updatedAt', { unique: false });
                     convStore.createIndex('createdAt', 'createdAt', { unique: false });
+                } else {
+                    convStore = tx.objectStore('conversations');
+                }
+                if (!convStore.indexNames.contains('folderId')) {
+                    convStore.createIndex('folderId', 'folderId', { unique: false });
                 }
 
-                // 2. Store Messages
                 if (!db.objectStoreNames.contains('messages')) {
                     const msgStore = db.createObjectStore('messages', { keyPath: 'id' });
                     msgStore.createIndex('conversationId', 'conversationId', { unique: false });
                     msgStore.createIndex('createdAt', 'createdAt', { unique: false });
                 }
 
-                // 3. Store Paramètres (clé API, thème, modèle actif...)
                 if (!db.objectStoreNames.contains('settings')) {
                     db.createObjectStore('settings', { keyPath: 'key' });
                 }
 
-                // 4. Store Rôles / Personas métiers
                 if (!db.objectStoreNames.contains('roles')) {
                     db.createObjectStore('roles', { keyPath: 'id' });
                 }
+
+                let folderStore;
+                if (!db.objectStoreNames.contains('folders')) {
+                    folderStore = db.createObjectStore('folders', { keyPath: 'id' });
+                    folderStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+                    folderStore.createIndex('name', 'name', { unique: false });
+                } else {
+                    folderStore = tx.objectStore('folders');
+                }
+
+                if (!db.objectStoreNames.contains('documents')) {
+                    const documentStore = db.createObjectStore('documents', { keyPath: 'id' });
+                    documentStore.createIndex('folderId', 'folderId', { unique: false });
+                    documentStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+                    documentStore.createIndex('hash', 'hash', { unique: false });
+                }
+
+                if (!db.objectStoreNames.contains('documentChunks')) {
+                    const chunkStore = db.createObjectStore('documentChunks', { keyPath: 'id' });
+                    chunkStore.createIndex('documentId', 'documentId', { unique: false });
+                    chunkStore.createIndex('folderId', 'folderId', { unique: false });
+                }
+
+                if (oldVersion < 2) {
+                    const now = Date.now();
+                    folderStore.put({
+                        id: DEFAULT_FOLDER_ID,
+                        name: 'Dossier principal',
+                        description: 'Dossier créé automatiquement lors de la migration.',
+                        tags: [],
+                        metadata: { migratedFromVersion: oldVersion || 1 },
+                        createdAt: now,
+                        updatedAt: now
+                    });
+
+                    const cursorRequest = convStore.openCursor();
+                    cursorRequest.onsuccess = (cursorEvent) => {
+                        const cursor = cursorEvent.target.result;
+                        if (!cursor) return;
+                        const conversation = cursor.value;
+                        if (!conversation.folderId) {
+                            conversation.folderId = DEFAULT_FOLDER_ID;
+                            cursor.update(conversation);
+                        }
+                        cursor.continue();
+                    };
+                }
             };
 
-            request.onsuccess = (event) => {
+            request.onsuccess = async (event) => {
                 this.db = event.target.result;
-                this._initDefaultRoles().then(() => resolve(this.db));
+                this.db.onversionchange = () => this.db.close();
+                try {
+                    await this._ensureDefaultFolder();
+                    await this._initDefaultRoles();
+                    resolve(this.db);
+                } catch (error) {
+                    reject(error);
+                }
             };
 
             request.onerror = (event) => {
                 console.error('Erreur ouverture IndexedDB Sealarca:', event.target.error);
                 reject(event.target.error);
             };
+            request.onblocked = () => reject(new Error('La migration IndexedDB est bloquée par un autre onglet Sealarca-Desk.'));
         });
 
         return this.initPromise;
     }
 
-    // --- Rôles prédéfinis pour professions réglementées suisses ---
-    async _initDefaultRoles() {
-        const existingRoles = await this.getRoles();
-        if (existingRoles.length > 0) return;
+    _request(storeName, mode, operation) {
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction(storeName, mode);
+            const store = tx.objectStore(storeName);
+            let request;
+            try {
+                request = operation(store, tx);
+            } catch (error) {
+                reject(error);
+                return;
+            }
+            if (request) {
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            } else {
+                tx.oncomplete = () => resolve(true);
+            }
+            tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(tx.error || new Error('Transaction IndexedDB annulée.'));
+        });
+    }
 
+    _getAllDirect(storeName) {
+        return this._request(storeName, 'readonly', store => store.getAll());
+    }
+
+    async _ensureDefaultFolder() {
+        const existing = await this._request('folders', 'readonly', store => store.get(DEFAULT_FOLDER_ID));
+        if (existing) return existing;
+        const now = Date.now();
+        const folder = {
+            id: DEFAULT_FOLDER_ID,
+            name: 'Dossier principal',
+            description: '',
+            tags: [],
+            metadata: {},
+            createdAt: now,
+            updatedAt: now
+        };
+        await this._request('folders', 'readwrite', store => store.put(folder));
+        return folder;
+    }
+
+    async _initDefaultRoles() {
+        const existingRoles = await this._getAllDirect('roles');
+        if (existingRoles.length > 0) return;
         const defaultRoles = [
             {
-                id: 'role-legal',
-                name: 'Juriste & Droit des Contrats',
-                icon: '⚖️',
+                id: 'role-legal', name: 'Juriste & Droit des Contrats', icon: '⚖️',
                 description: 'Analyse rigoureuse de clauses contractuelles, identification des risques et conformité (CO/LPD).',
                 systemPrompt: `Tu es un juriste expert de haut niveau spécialisé en droit suisse (Code des Obligations, Loi sur la protection des données - LPD) et droit comparé.
 Ton rôle est d'analyser minutieusement les contrats, actes et pièces juridiques.
@@ -80,9 +179,7 @@ Ton rôle est d'analyser minutieusement les contrats, actes et pièces juridique
 - Structure tes réponses avec méthode : Constat, Analyse juridique, Recommandations concrètes.`
             },
             {
-                id: 'role-fiduciary',
-                name: 'Expert Fiscal & Fiduciaire',
-                icon: '📊',
+                id: 'role-fiduciary', name: 'Expert Fiscal & Fiduciaire', icon: '📊',
                 description: 'Analyse de bilans, comptes de résultat, ratios financiers et conformité fiscale.',
                 systemPrompt: `Tu es un expert fiduciaire et fiscaliste chevronné.
 Ton rôle est d'analyser des documents comptables, tableaux financiers (Excel/CSV) et déclarations fiscales.
@@ -91,242 +188,298 @@ Ton rôle est d'analyser des documents comptables, tableaux financiers (Excel/CS
 - Rédige des synthèses financières claires pour la direction.`
             },
             {
-                id: 'role-compliance',
-                name: 'Conformité & Secret Professionnel',
-                icon: '🛡️',
+                id: 'role-compliance', name: 'Conformité & Secret Professionnel', icon: '🛡️',
                 description: 'Vérification de conformité réglementaire, diligence raisonnable (KYC/LBA) et confidentialité.',
                 systemPrompt: `Tu es un officier de conformité (Compliance Officer) et expert en réglementation suisse et internationale (LBA, CDB, RGPD/nLPD).
 Ton rôle est d'évaluer les risques de conformité, de vérifier l'adéquation des processus et d'assister dans la rédaction de mémos de conformité rigoureux.`
             },
             {
-                id: 'role-executive',
-                name: 'Synthèse Exécutive & Rédaction',
-                icon: '✍️',
+                id: 'role-executive', name: 'Synthèse Exécutive & Rédaction', icon: '✍️',
                 description: 'Restitution synthétique, mémos de direction, comptes-rendus et courriers officiels.',
                 systemPrompt: `Tu es un conseiller en rédaction exécutive pour comités de direction et conseils d'administration.
 Ton rôle est de synthétiser des dossiers volumineux en notes de synthèse concises, percutantes et élégantes, en conservant tous les éléments décisionnels cruciaux.`
             }
         ];
-
-        for (const role of defaultRoles) {
-            await this.saveRole(role);
-        }
+        await Promise.all(defaultRoles.map(role => this._request('roles', 'readwrite', store => store.put(role))));
     }
 
-    // --- Paramètres (Settings) ---
     async getSetting(key, defaultValue = null) {
         await this.init();
-        return new Promise((resolve) => {
-            const tx = this.db.transaction('settings', 'readonly');
-            const store = tx.objectStore('settings');
-            const req = store.get(key);
-            req.onsuccess = () => resolve(req.result ? req.result.value : defaultValue);
-            req.onerror = () => resolve(defaultValue);
-        });
+        const result = await this._request('settings', 'readonly', store => store.get(key));
+        return result ? result.value : defaultValue;
     }
 
     async setSetting(key, value) {
         await this.init();
-        return new Promise((resolve, reject) => {
-            const tx = this.db.transaction('settings', 'readwrite');
-            const store = tx.objectStore('settings');
-            const req = store.put({ key, value, updatedAt: Date.now() });
-            req.onsuccess = () => resolve(true);
-            req.onerror = () => reject(req.error);
-        });
+        await this._request('settings', 'readwrite', store => store.put({ key, value, updatedAt: Date.now() }));
+        return true;
     }
 
     async deleteSetting(key) {
         await this.init();
+        await this._request('settings', 'readwrite', store => store.delete(key));
+        return true;
+    }
+
+    async getFolders() {
+        await this.init();
+        const folders = await this._getAllDirect('folders');
+        return folders.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    }
+
+    async getFolder(id) {
+        await this.init();
+        return (await this._request('folders', 'readonly', store => store.get(id))) || null;
+    }
+
+    async saveFolder(folder) {
+        await this.init();
+        const now = Date.now();
+        const value = {
+            ...folder,
+            name: String(folder.name || 'Dossier sans titre').trim(),
+            description: String(folder.description || '').trim(),
+            tags: Array.isArray(folder.tags) ? folder.tags : [],
+            metadata: folder.metadata && typeof folder.metadata === 'object' ? folder.metadata : {},
+            createdAt: folder.createdAt || now,
+            updatedAt: now
+        };
+        await this._request('folders', 'readwrite', store => store.put(value));
+        return value;
+    }
+
+    async deleteFolder(id) {
+        await this.init();
+        const conversations = await this.getConversations(id);
+        const documents = await this.getDocuments(id);
         return new Promise((resolve, reject) => {
-            const tx = this.db.transaction('settings', 'readwrite');
-            const store = tx.objectStore('settings');
-            const req = store.delete(key);
-            req.onsuccess = () => resolve(true);
-            req.onerror = () => reject(req.error);
+            const tx = this.db.transaction(['folders', 'conversations', 'messages', 'documents', 'documentChunks'], 'readwrite');
+            tx.objectStore('folders').delete(id);
+            const convStore = tx.objectStore('conversations');
+            const msgIndex = tx.objectStore('messages').index('conversationId');
+            conversations.forEach(conversation => {
+                convStore.delete(conversation.id);
+                const req = msgIndex.openCursor(IDBKeyRange.only(conversation.id));
+                req.onsuccess = event => {
+                    const cursor = event.target.result;
+                    if (cursor) { cursor.delete(); cursor.continue(); }
+                };
+            });
+            const docStore = tx.objectStore('documents');
+            const chunkIndex = tx.objectStore('documentChunks').index('documentId');
+            documents.forEach(document => {
+                docStore.delete(document.id);
+                const req = chunkIndex.openCursor(IDBKeyRange.only(document.id));
+                req.onsuccess = event => {
+                    const cursor = event.target.result;
+                    if (cursor) { cursor.delete(); cursor.continue(); }
+                };
+            });
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(tx.error || new Error('Suppression du dossier annulée.'));
         });
     }
 
-    // --- Conversations ---
-    async getConversations() {
+    async getConversations(folderId = null) {
         await this.init();
-        return new Promise((resolve) => {
-            const tx = this.db.transaction('conversations', 'readonly');
-            const store = tx.objectStore('conversations');
-            const index = store.index('updatedAt');
-            const req = index.openCursor(null, 'prev');
-            const list = [];
-            req.onsuccess = (e) => {
-                const cursor = e.target.result;
-                if (cursor) {
-                    list.push(cursor.value);
-                    cursor.continue();
-                } else {
-                    resolve(list);
-                }
-            };
-            req.onerror = () => resolve([]);
-        });
+        const conversations = folderId
+            ? await this._request('conversations', 'readonly', store => store.index('folderId').getAll(folderId))
+            : await this._getAllDirect('conversations');
+        return conversations.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
     }
 
     async getConversation(id) {
         await this.init();
-        return new Promise((resolve) => {
-            const tx = this.db.transaction('conversations', 'readonly');
-            const store = tx.objectStore('conversations');
-            const req = store.get(id);
-            req.onsuccess = () => resolve(req.result || null);
-            req.onerror = () => resolve(null);
-        });
+        return (await this._request('conversations', 'readonly', store => store.get(id))) || null;
     }
 
-    async saveConversation(conv) {
+    async saveConversation(conversation) {
         await this.init();
-        return new Promise((resolve, reject) => {
-            const tx = this.db.transaction('conversations', 'readwrite');
-            const store = tx.objectStore('conversations');
-            conv.updatedAt = Date.now();
-            if (!conv.createdAt) conv.createdAt = conv.updatedAt;
-            const req = store.put(conv);
-            req.onsuccess = () => resolve(conv);
-            req.onerror = () => reject(req.error);
-        });
+        const now = Date.now();
+        const value = {
+            ...conversation,
+            folderId: conversation.folderId || DEFAULT_FOLDER_ID,
+            createdAt: conversation.createdAt || now,
+            updatedAt: now
+        };
+        await this._request('conversations', 'readwrite', store => store.put(value));
+        return value;
     }
 
     async deleteConversation(id) {
         await this.init();
-        // Supprime la conversation et tous ses messages associés
         return new Promise((resolve, reject) => {
             const tx = this.db.transaction(['conversations', 'messages'], 'readwrite');
-            const convStore = tx.objectStore('conversations');
-            const msgStore = tx.objectStore('messages');
-
-            convStore.delete(id);
-
-            const msgIndex = msgStore.index('conversationId');
-            const req = msgIndex.openCursor(IDBKeyRange.only(id));
-            req.onsuccess = (e) => {
-                const cursor = e.target.result;
-                if (cursor) {
-                    cursor.delete();
-                    cursor.continue();
-                }
+            tx.objectStore('conversations').delete(id);
+            const req = tx.objectStore('messages').index('conversationId').openCursor(IDBKeyRange.only(id));
+            req.onsuccess = event => {
+                const cursor = event.target.result;
+                if (cursor) { cursor.delete(); cursor.continue(); }
             };
-
             tx.oncomplete = () => resolve(true);
             tx.onerror = () => reject(tx.error);
         });
     }
 
-    // --- Messages ---
     async getMessages(conversationId) {
         await this.init();
-        return new Promise((resolve) => {
-            const tx = this.db.transaction('messages', 'readonly');
-            const store = tx.objectStore('messages');
-            const index = store.index('conversationId');
-            const req = index.openCursor(IDBKeyRange.only(conversationId));
-            const list = [];
-            req.onsuccess = (e) => {
-                const cursor = e.target.result;
-                if (cursor) {
-                    list.push(cursor.value);
-                    cursor.continue();
-                } else {
-                    list.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-                    resolve(list);
-                }
-            };
-            req.onerror = () => resolve([]);
-        });
+        const messages = await this._request('messages', 'readonly', store => store.index('conversationId').getAll(conversationId));
+        return messages.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
     }
 
-    async saveMessage(msg) {
+    async saveMessage(message) {
+        await this.init();
+        const value = { ...message, createdAt: message.createdAt || Date.now() };
+        await this._request('messages', 'readwrite', store => store.put(value));
+        return value;
+    }
+
+    async getDocuments(folderId) {
+        await this.init();
+        const documents = folderId
+            ? await this._request('documents', 'readonly', store => store.index('folderId').getAll(folderId))
+            : await this._getAllDirect('documents');
+        return documents.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    }
+
+    async getDocument(id) {
+        await this.init();
+        return (await this._request('documents', 'readonly', store => store.get(id))) || null;
+    }
+
+    async getDocumentsByIds(ids) {
+        await this.init();
+        const uniqueIds = [...new Set((ids || []).filter(Boolean))];
+        return Promise.all(uniqueIds.map(id => this.getDocument(id))).then(items => items.filter(Boolean));
+    }
+
+    async findDocumentByHash(folderId, hash) {
+        await this.init();
+        if (!hash) return null;
+        const matches = await this._request('documents', 'readonly', store => store.index('hash').getAll(hash));
+        return matches.find(document => document.folderId === folderId) || null;
+    }
+
+    async saveDocument(document) {
+        await this.init();
+        const now = Date.now();
+        const value = {
+            ...document,
+            folderId: document.folderId || DEFAULT_FOLDER_ID,
+            markdown: String(document.markdown || ''),
+            sourceMap: Array.isArray(document.sourceMap) ? document.sourceMap : [],
+            metadata: document.metadata && typeof document.metadata === 'object' ? document.metadata : {},
+            derivations: document.derivations && typeof document.derivations === 'object'
+                ? document.derivations
+                : { chunks: { status: 'not_generated', source: 'markdown' } },
+            createdAt: document.createdAt || now,
+            updatedAt: now
+        };
+        await this._request('documents', 'readwrite', store => store.put(value));
+        return value;
+    }
+
+    async deleteDocument(id) {
         await this.init();
         return new Promise((resolve, reject) => {
-            const tx = this.db.transaction('messages', 'readwrite');
-            const store = tx.objectStore('messages');
-            if (!msg.createdAt) msg.createdAt = Date.now();
-            const req = store.put(msg);
-            req.onsuccess = () => resolve(msg);
-            req.onerror = () => reject(req.error);
+            const tx = this.db.transaction(['documents', 'documentChunks'], 'readwrite');
+            tx.objectStore('documents').delete(id);
+            const req = tx.objectStore('documentChunks').index('documentId').openCursor(IDBKeyRange.only(id));
+            req.onsuccess = event => {
+                const cursor = event.target.result;
+                if (cursor) { cursor.delete(); cursor.continue(); }
+            };
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => reject(tx.error);
         });
     }
 
-    // --- Rôles ---
+    async getDocumentChunks(documentId) {
+        await this.init();
+        const chunks = await this._request('documentChunks', 'readonly', store => store.index('documentId').getAll(documentId));
+        return chunks.sort((a, b) => (a.index || 0) - (b.index || 0));
+    }
+
+    async replaceDocumentChunks(document, chunks) {
+        await this.init();
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction(['documents', 'documentChunks'], 'readwrite');
+            const chunkStore = tx.objectStore('documentChunks');
+            const req = chunkStore.index('documentId').openCursor(IDBKeyRange.only(document.id));
+            req.onsuccess = event => {
+                const cursor = event.target.result;
+                if (cursor) { cursor.delete(); cursor.continue(); return; }
+                (chunks || []).forEach((chunk, index) => chunkStore.put({
+                    ...chunk,
+                    id: chunk.id || `chunk_${document.id}_${index}`,
+                    documentId: document.id,
+                    folderId: document.folderId,
+                    index,
+                    derivedFrom: 'markdown',
+                    createdAt: chunk.createdAt || Date.now()
+                }));
+                tx.objectStore('documents').put({
+                    ...document,
+                    derivations: {
+                        ...(document.derivations || {}),
+                        chunks: { status: 'ready', count: (chunks || []).length, source: 'markdown', updatedAt: Date.now() }
+                    },
+                    updatedAt: Date.now()
+                });
+            };
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+
     async getRoles() {
         await this.init();
-        return new Promise((resolve) => {
-            const tx = this.db.transaction('roles', 'readonly');
-            const store = tx.objectStore('roles');
-            const req = store.getAll();
-            req.onsuccess = () => resolve(req.result || []);
-            req.onerror = () => resolve([]);
-        });
+        return this._getAllDirect('roles');
     }
 
     async saveRole(role) {
         await this.init();
-        return new Promise((resolve, reject) => {
-            const tx = this.db.transaction('roles', 'readwrite');
-            const store = tx.objectStore('roles');
-            const req = store.put(role);
-            req.onsuccess = () => resolve(role);
-            req.onerror = () => reject(req.error);
-        });
+        await this._request('roles', 'readwrite', store => store.put(role));
+        return role;
     }
 
     async deleteRole(id) {
         await this.init();
-        return new Promise((resolve, reject) => {
-            const tx = this.db.transaction('roles', 'readwrite');
-            const store = tx.objectStore('roles');
-            const req = store.delete(id);
-            req.onsuccess = () => resolve(true);
-            req.onerror = () => reject(req.error);
-        });
+        await this._request('roles', 'readwrite', store => store.delete(id));
+        return true;
     }
 
-    // --- Export / Import complet ---
     async exportAllData() {
         await this.init();
-        const convs = await this.getConversations();
-        const allMessages = {};
-        for (const c of convs) {
-            allMessages[c.id] = await this.getMessages(c.id);
-        }
-        const roles = await this.getRoles();
+        const conversations = await this.getConversations();
+        const messages = {};
+        for (const conversation of conversations) messages[conversation.id] = await this.getMessages(conversation.id);
         return {
-            version: '1.0',
+            version: '2.0',
             exportedAt: new Date().toISOString(),
-            conversations: convs,
-            messages: allMessages,
-            roles: roles
+            folders: await this.getFolders(),
+            documents: await this.getDocuments(),
+            conversations,
+            messages,
+            roles: await this.getRoles()
         };
     }
 
     async importData(data) {
-        if (!data || !Array.isArray(data.conversations)) {
-            throw new Error('Format de sauvegarde Sealarca invalide.');
-        }
+        if (!data || !Array.isArray(data.conversations)) throw new Error('Format de sauvegarde Sealarca invalide.');
         await this.init();
-        for (const c of data.conversations) {
-            await this.saveConversation(c);
-            const msgs = data.messages && data.messages[c.id];
-            if (Array.isArray(msgs)) {
-                for (const m of msgs) {
-                    await this.saveMessage(m);
-                }
-            }
+        if (Array.isArray(data.folders)) for (const folder of data.folders) await this.saveFolder(folder);
+        if (Array.isArray(data.documents)) for (const document of data.documents) await this.saveDocument(document);
+        for (const conversation of data.conversations) {
+            await this.saveConversation({ ...conversation, folderId: conversation.folderId || DEFAULT_FOLDER_ID });
+            const messages = data.messages && data.messages[conversation.id];
+            if (Array.isArray(messages)) for (const message of messages) await this.saveMessage(message);
         }
-        if (Array.isArray(data.roles)) {
-            for (const r of data.roles) {
-                await this.saveRole(r);
-            }
-        }
+        if (Array.isArray(data.roles)) for (const role of data.roles) await this.saveRole(role);
         return true;
     }
 }
 
-// Instance singleton exportée globalement
+window.SEALARCA_DEFAULT_FOLDER_ID = DEFAULT_FOLDER_ID;
 window.sealarcaDb = new SealarcaDB();

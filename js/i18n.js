@@ -23,6 +23,8 @@ const SEALARCA_I18N = {
             deleteConfirm: 'Voulez-vous supprimer cette consultation ?',
             you: 'Vous'
         },
+        folders: { title: 'Dossiers', new: 'Nouveau dossier', none: 'Aucun dossier', defaultName: 'Nouveau dossier', namePrompt: 'Nom du dossier :', descriptionPrompt: 'Description du dossier :', tagsPrompt: 'Étiquettes séparées par des virgules :', deleteConfirm: 'Supprimer ce dossier, ses conversations et ses documents ?', keepOne: 'Au moins un dossier doit être conservé.' },
+        documents: { title: 'Bibliothèque', add: 'Ajouter des documents', close: 'Terminé', empty: 'Aucun document dans ce dossier.', selectionHint: 'Sélectionnez les documents à utiliser uniquement pour la prochaine demande.', preview: 'Consulter', download: 'Original', provenance: 'Repères de provenance', downloadOriginal: 'Télécharger le fichier original', deleteConfirm: 'Supprimer ce document du dossier ?' },
         empty: {
             title: "L'IA dans un coffre-fort numérique.",
             desc: "Traitez vos contrats, bilans, dossiers et documents confidentiels en toute sérénité. Vos requêtes sont traitées dans un environnement matériellement isolé et chiffré en Suisse.",
@@ -112,6 +114,8 @@ const SEALARCA_I18N = {
             deleteConfirm: 'Möchten Sie diese Konsultation löschen?',
             you: 'Sie'
         },
+        folders: { title: 'Ordner', new: 'Neuer Ordner', none: 'Kein Ordner', defaultName: 'Neuer Ordner', namePrompt: 'Ordnername:', descriptionPrompt: 'Ordnerbeschreibung:', tagsPrompt: 'Kommagetrennte Schlagwörter:', deleteConfirm: 'Diesen Ordner mit Gesprächen und Dokumenten löschen?', keepOne: 'Mindestens ein Ordner muss erhalten bleiben.' },
+        documents: { title: 'Dokumentenbibliothek', add: 'Dokumente hinzufügen', close: 'Fertig', empty: 'Keine Dokumente in diesem Ordner.', selectionHint: 'Wählen Sie Dokumente nur für die nächste Anfrage aus.', preview: 'Ansehen', download: 'Original', provenance: 'Quellenverweise', downloadOriginal: 'Originaldatei herunterladen', deleteConfirm: 'Dieses Dokument löschen?' },
         empty: {
             title: "KI im digitalen Tresor.",
             desc: "Verarbeiten Sie Verträge, Bilanzen, Akten und vertrauliche Dokumente mit voller Sicherheit. Ihre Anfragen werden in einer hardware-isolierten und verschlüsselten Umgebung in der Schweiz verarbeitet.",
@@ -201,6 +205,8 @@ const SEALARCA_I18N = {
             deleteConfirm: 'Vuoi eliminare questa consultazione?',
             you: 'Tu'
         },
+        folders: { title: 'Cartelle', new: 'Nuova cartella', none: 'Nessuna cartella', defaultName: 'Nuova cartella', namePrompt: 'Nome della cartella:', descriptionPrompt: 'Descrizione della cartella:', tagsPrompt: 'Etichette separate da virgole:', deleteConfirm: 'Eliminare la cartella con conversazioni e documenti?', keepOne: 'Deve rimanere almeno una cartella.' },
+        documents: { title: 'Biblioteca documenti', add: 'Aggiungi documenti', close: 'Fine', empty: 'Nessun documento in questa cartella.', selectionHint: 'Seleziona i documenti da usare solo per la prossima richiesta.', preview: 'Consulta', download: 'Originale', provenance: 'Riferimenti di provenienza', downloadOriginal: 'Scarica file originale', deleteConfirm: 'Eliminare questo documento?' },
         empty: {
             title: "L'IA in una cassaforte digitale.",
             desc: "Elabora contratti, bilanci, fascicoli e documenti riservati in totale sicurezza. Le tue richieste vengono elaborate in un ambiente crittografato e isolato a livello hardware in Svizzera.",
@@ -290,6 +296,8 @@ const SEALARCA_I18N = {
             deleteConfirm: 'Do you want to delete this consultation?',
             you: 'You'
         },
+        folders: { title: 'Folders', new: 'New folder', none: 'No folder', defaultName: 'New folder', namePrompt: 'Folder name:', descriptionPrompt: 'Folder description:', tagsPrompt: 'Comma-separated tags:', deleteConfirm: 'Delete this folder, its conversations and documents?', keepOne: 'At least one folder must remain.' },
+        documents: { title: 'Document library', add: 'Add documents', close: 'Done', empty: 'No documents in this folder.', selectionHint: 'Select documents to use only for the next request.', preview: 'View', download: 'Original', provenance: 'Source references', downloadOriginal: 'Download original file', deleteConfirm: 'Delete this document from the folder?' },
         empty: {
             title: "AI in a digital vault.",
             desc: "Process confidential contracts, statements, files, and reports with full peace of mind. Your requests are processed inside a hardware-isolated, encrypted environment in Switzerland.",
@@ -379,6 +387,8 @@ const SEALARCA_I18N = {
             deleteConfirm: '¿Desea eliminar esta consulta?',
             you: 'Usted'
         },
+        folders: { title: 'Carpetas', new: 'Nueva carpeta', none: 'Sin carpeta', defaultName: 'Nueva carpeta', namePrompt: 'Nombre de la carpeta:', descriptionPrompt: 'Descripción de la carpeta:', tagsPrompt: 'Etiquetas separadas por comas:', deleteConfirm: '¿Eliminar esta carpeta, sus conversaciones y documentos?', keepOne: 'Debe conservarse al menos una carpeta.' },
+        documents: { title: 'Biblioteca documental', add: 'Añadir documentos', close: 'Listo', empty: 'No hay documentos en esta carpeta.', selectionHint: 'Seleccione documentos para usarlos solo en la próxima solicitud.', preview: 'Consultar', download: 'Original', provenance: 'Referencias de origen', downloadOriginal: 'Descargar archivo original', deleteConfirm: '¿Eliminar este documento?' },
         empty: {
             title: "IA en una bóveda digital.",
             desc: "Procese contratos, balances, expedientes y documentos confidenciales con total seguridad. Sus solicitudes se procesan en un entorno aislado por hardware y cifrado en Suiza.",

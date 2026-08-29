@@ -5,7 +5,8 @@
 **Client de bureau & web local autonome pour la passerelle IA suisse [Sealarca](https://sealarca.ch)**  
 *L'IA dans un coffre-fort numérique pour les données hautement sensibles.*
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-087F68.svg)](LICENSE)
+[![License: PolyForm Perimeter 1.0.1](https://img.shields.io/badge/License-PolyForm%20Perimeter%201.0.1-087F68.svg)](LICENSE)
+[![Release: v1.0.0](https://img.shields.io/badge/Release-v1.0.0-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.0.0)
 [![Zero-Install](https://img.shields.io/badge/Installation-0%20Install-101820.svg)](#-démarrage-rapide)
 [![Offline-Ready](https://img.shields.io/badge/Dépendances-100%25%20Local-137A52.svg)](#-architecture--confidentialité)
 
@@ -93,7 +94,7 @@ Sealarca-Desk/
 │   ├── i18n.js              # Dictionnaire 5 langues (FR, DE, IT, EN, ES)
 │   ├── api.js               # Client API Sealarca (Auto-découverte + Streaming SSE)
 │   ├── db.js                # Gestionnaire IndexedDB local
-│   ├── doc-handler.js       # Extracteur universel de documents
+│   ├── doc-handler.js       # Markdown canonique local et sourceMap
 │   └── app.js               # Composant racine Alpine.js
 └── images/                  # Identité visuelle officielle Sealarca
 ```
@@ -110,7 +111,7 @@ Sealarca-Desk/
 
 ## 📄 Licence
 
-Ce projet est distribué sous licence **MIT**. Consultez le fichier [LICENSE](LICENSE) pour plus d'informations.
+Ce projet **source available** est distribué sous la **PolyForm Perimeter License 1.0.1**. Consultez [LICENSE](LICENSE). Il n’est pas présenté comme un logiciel open source.
 
 Copyright (c) 2026 **eyelo SA (ScioNos)** — Suisse.
 

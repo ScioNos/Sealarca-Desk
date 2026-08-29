@@ -5,7 +5,8 @@
 **Client Desktop & Web Locale Autonomo per il Gateway IA Svizzero [Sealarca](https://sealarca.ch)**  
 *L'IA in una cassaforte digitale per dati altamente sensibili e regolamentati.*
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-087F68.svg)](LICENSE)
+[![License: PolyForm Perimeter 1.0.1](https://img.shields.io/badge/License-PolyForm%20Perimeter%201.0.1-087F68.svg)](LICENSE)
+[![Release: v1.0.0](https://img.shields.io/badge/Release-v1.0.0-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.0.0)
 [![Zero-Install](https://img.shields.io/badge/Installazione-0%20Install-101820.svg)](#-guida-rapida)
 [![Offline-Ready](https://img.shields.io/badge/Dipendenze-100%25%20Locale-137A52.svg)](#-architettura--riservatezza)
 
@@ -110,7 +111,7 @@ Sealarca-Desk/
 
 ## 📄 Licenza
 
-Questo progetto è distribuito con licenza **MIT**. Consulta il file [LICENSE](LICENSE) per ulteriori informazioni.
+Questo progetto **source available** è distribuito con la **PolyForm Perimeter License 1.0.1**. Vedere [LICENSE](LICENSE). Non è presentato come software open source.
 
 Copyright (c) 2026 **eyelo SA (ScioNos)** — Svizzera.
 

@@ -37,11 +37,16 @@ document.addEventListener('alpine:init', () => {
         isApiKeyVisible: false,
 
         // --- État des conversations & Messages ---
+        folders: [],
+        activeFolderId: null,
         conversations: [],
         activeConversationId: null,
         messages: [],
+        documents: [],
+        selectedDocumentIds: [],
+        attachedFiles: [], // documents du dossier sélectionnés pour la requête courante
+        previewDocument: null,
         inputPrompt: '',
-        attachedFiles: [],
         isStreaming: false,
         currentStreamingMessage: '',
         currentStreamingReasoning: '',
@@ -56,6 +61,8 @@ document.addEventListener('alpine:init', () => {
         searchQuery: '',
         isSettingsOpen: false,
         isRolesOpen: false,
+        isDocumentsOpen: false,
+        isDocumentPreviewOpen: false,
         isDarkMode: false,
         isDraggingFile: false,
         toastMessage: '',
@@ -79,6 +86,19 @@ document.addEventListener('alpine:init', () => {
         get appConnecting() { return this.t('app.connecting'); },
         get appCopy() { return this.t('app.copy'); },
         get appDelete() { return this.t('app.delete'); },
+        get appFolders() { return this.t('folders.title'); },
+        get appNewFolder() { return this.t('folders.new'); },
+        get appDocuments() { return this.t('documents.title'); },
+        get appAddDocuments() { return this.t('documents.add'); },
+        get documentsCloseLabel() { return this.t('documents.close'); },
+        get documentsSelectionHint() { return this.t('documents.selectionHint'); },
+        get documentsEmptyLabel() { return this.t('documents.empty'); },
+        get documentsPreviewLabel() { return this.t('documents.preview'); },
+        get documentsDownloadLabel() { return this.t('documents.download'); },
+        get documentsProvenanceLabel() { return this.t('documents.provenance'); },
+        get documentsDownloadOriginalLabel() { return this.t('documents.downloadOriginal'); },
+        get documentPreviewTitle() { return this.previewDocument ? this.previewDocument.name : this.t('documents.preview'); },
+        get documentPreviewSize() { return this.previewDocument ? this.formatBytes(this.previewDocument.size) : ''; },
         get emptyTitle() { return this.t('empty.title'); },
         get emptyDesc() { return this.t('empty.desc'); },
         get emptyCard1Title() { return this.t('empty.card1Title'); },
@@ -119,6 +139,12 @@ document.addEventListener('alpine:init', () => {
         get hasNoModels() { return this.models.length === 0; },
         get showEmptyState() { return this.messages.length === 0 && !this.isStreaming; },
         get hasAttachedFiles() { return this.attachedFiles.length > 0; },
+        get hasFolders() { return this.folders.length > 0; },
+        get hasDocuments() { return this.documents.length > 0; },
+        get hasNoDocuments() { return this.documents.length === 0; },
+        get activeFolder() { return this.folders.find(folder => folder.id === this.activeFolderId) || null; },
+        get activeFolderName() { return this.activeFolder ? this.activeFolder.name : this.t('folders.none'); },
+        get previewMarkdown() { return this.previewDocument ? this.renderMarkdown(this.previewDocument.markdown) : ''; },
         get inputBoxClass() { return this.isDraggingFile ? 'dragover' : ''; },
         get sendButtonClass() { return this.isStreaming ? 'btn-stop' : ''; },
         get showSendIcon() { return !this.isStreaming; },
@@ -147,7 +173,10 @@ document.addEventListener('alpine:init', () => {
         closeSettings() { if (this.hasConfiguredApi) this.isSettingsOpen = false; },
         openRoles() { this.isRolesOpen = true; },
         closeRoles() { this.isRolesOpen = false; },
-        closeOverlays() { this.closeRoles(); this.closeSettings(); },
+        openDocuments() { this.isDocumentsOpen = true; },
+        closeDocuments() { this.isDocumentsOpen = false; },
+        closeDocumentPreview() { this.isDocumentPreviewOpen = false; this.previewDocument = null; },
+        closeOverlays() { this.closeRoles(); this.closeSettings(); this.closeDocuments(); this.closeDocumentPreview(); },
         toggleSidebar() { this.sidebarCollapsed = !this.sidebarCollapsed; },
         modelChanged() { return window.sealarcaDb.setSetting('sealarca_model', this.selectedModel); },
         updateSearchQuery(event) { this.searchQuery = event.currentTarget.value; },
@@ -216,8 +245,12 @@ document.addEventListener('alpine:init', () => {
             // 4. Charger les rôles métiers
             await this.refreshRoles();
 
-            // 5. Charger la liste des conversations
-            await this.loadConversations();
+            // 5. Charger les dossiers, documents et conversations
+            await this.loadFolders();
+            if (this.folders.length > 0) {
+                const savedFolderId = await window.sealarcaDb.getSetting('sealarca_active_folder', this.folders[0].id);
+                await this.selectFolder(this.folders.some(folder => folder.id === savedFolderId) ? savedFolderId : this.folders[0].id, false);
+            }
 
             // 6. Si une clé API est présente, découvrir les modèles
             if (this.apiKey) {
@@ -228,10 +261,8 @@ document.addEventListener('alpine:init', () => {
                 this.focusApiKeyInput();
             }
 
-            // 7. Charger la dernière conversation si existante
-            if (this.conversations.length > 0) {
-                await this.selectConversation(this.conversations[0].id);
-            }
+            // 7. Charger la dernière conversation du dossier actif si existante
+            if (this.conversations.length > 0) await this.selectConversation(this.conversations[0].id);
         },
 
         // --- Changement de langue ---
@@ -385,10 +416,167 @@ document.addEventListener('alpine:init', () => {
             this.focusApiKeyInput();
         },
 
+        // --- Dossiers / Projets ---
+        async loadFolders() {
+            const app = this;
+            const folders = await window.sealarcaDb.getFolders();
+            this.folders = folders.map(folder => {
+                const decorated = {
+                    ...folder,
+                    get rowClass() { return app.activeFolderId === folder.id ? 'active' : ''; },
+                    select() { app.selectFolder(folder.id); },
+                    edit() { app.editFolder(folder.id); },
+                    remove() { app.deleteFolder(folder.id); }
+                };
+                return decorated;
+            });
+        },
+
+        async selectFolder(id, loadLatestConversation = true) {
+            if (this.isStreaming || !id) return;
+            this.activeFolderId = id;
+            await window.sealarcaDb.setSetting('sealarca_active_folder', id);
+            this.activeConversationId = null;
+            this.messages = [];
+            this.inputPrompt = '';
+            this.selectedDocumentIds = [];
+            this.attachedFiles = [];
+            await Promise.all([this.loadDocuments(), this.loadConversations()]);
+            if (loadLatestConversation && this.conversations.length > 0) await this.selectConversation(this.conversations[0].id);
+        },
+
+        async createFolder() {
+            if (this.isStreaming) return;
+            const name = window.prompt(this.t('folders.namePrompt'), this.t('folders.defaultName'));
+            if (!name || !name.trim()) return;
+            const now = Date.now();
+            const folder = await window.sealarcaDb.saveFolder({
+                id: `folder_${now}_${Math.random().toString(36).slice(2, 8)}`,
+                name: name.trim(), description: '', tags: [], metadata: {}, createdAt: now
+            });
+            await this.loadFolders();
+            await this.selectFolder(folder.id, false);
+        },
+
+        async editFolder(id) {
+            const folder = await window.sealarcaDb.getFolder(id);
+            if (!folder) return;
+            const name = window.prompt(this.t('folders.namePrompt'), folder.name || '');
+            if (!name || !name.trim()) return;
+            const description = window.prompt(this.t('folders.descriptionPrompt'), folder.description || '');
+            if (description === null) return;
+            const tags = window.prompt(this.t('folders.tagsPrompt'), (folder.tags || []).join(', '));
+            if (tags === null) return;
+            await window.sealarcaDb.saveFolder({
+                ...folder,
+                name: name.trim(),
+                description: description.trim(),
+                tags: tags.split(',').map(tag => tag.trim()).filter(Boolean),
+                metadata: { ...(folder.metadata || {}), editedAt: new Date().toISOString() }
+            });
+            await this.loadFolders();
+        },
+
+        async deleteFolder(id) {
+            if (this.folders.length <= 1) {
+                this.showToast(this.t('folders.keepOne'), 5000);
+                return;
+            }
+            if (!window.confirm(this.t('folders.deleteConfirm'))) return;
+            await window.sealarcaDb.deleteFolder(id);
+            await this.loadFolders();
+            const next = this.folders[0];
+            if (next) await this.selectFolder(next.id);
+        },
+
+        // --- Bibliothèque documentaire du dossier ---
+        async loadDocuments() {
+            if (!this.activeFolderId) { this.documents = []; return; }
+            const app = this;
+            const documents = await window.sealarcaDb.getDocuments(this.activeFolderId);
+            this.documents = documents.map(document => {
+                const decorated = {
+                    ...document,
+                    get isSelected() { return app.selectedDocumentIds.includes(document.id); },
+                    get selectionClass() { return decorated.isSelected ? 'selected' : ''; },
+                    get selectionMark() { return decorated.isSelected ? '✓' : '+'; },
+                    get sizeLabel() { return app.formatBytes(document.size); },
+                    toggle() { app.toggleDocumentSelection(document.id); },
+                    preview() { app.openDocumentPreview(document.id); },
+                    download() { app.downloadDocument(document.id); },
+                    remove() { app.deleteDocument(document.id); }
+                };
+                return decorated;
+            });
+            this.selectedDocumentIds = this.selectedDocumentIds.filter(id => documents.some(document => document.id === id));
+            this.attachedFiles = this.documents.filter(document => this.selectedDocumentIds.includes(document.id));
+        },
+
+        toggleDocumentSelection(id) {
+            const index = this.selectedDocumentIds.indexOf(id);
+            if (index >= 0) this.selectedDocumentIds.splice(index, 1);
+            else this.selectedDocumentIds.push(id);
+            this.attachedFiles = this.documents.filter(document => this.selectedDocumentIds.includes(document.id));
+        },
+
+        async openDocumentPreview(id) {
+            this.previewDocument = await window.sealarcaDb.getDocument(id);
+            if (this.previewDocument) this.isDocumentPreviewOpen = true;
+        },
+
+        async deleteDocument(id) {
+            if (!window.confirm(this.t('documents.deleteConfirm'))) return;
+            await window.sealarcaDb.deleteDocument(id);
+            this.selectedDocumentIds = this.selectedDocumentIds.filter(documentId => documentId !== id);
+            await this.loadDocuments();
+        },
+
+        downloadPreviewDocument() {
+            if (this.previewDocument) return this.downloadDocument(this.previewDocument.id);
+        },
+
+        async downloadDocument(id) {
+            const document = await window.sealarcaDb.getDocument(id);
+            if (!document?.sourceFile) return;
+            const url = URL.createObjectURL(document.sourceFile);
+            const link = window.document.createElement('a');
+            link.href = url;
+            link.download = document.originalName || document.name;
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        },
+
+        formatBytes(size) {
+            const bytes = Number(size) || 0;
+            if (bytes < 1024) return `${bytes} o`;
+            if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} Ko`;
+            return `${(bytes / 1024 / 1024).toFixed(1)} Mo`;
+        },
+
+        buildConversationHistory() {
+            return this.messages.map(message => ({ role: message.role, content: message.content || '' }));
+        },
+
+        buildDocumentContext(documents) {
+            if (!documents.length) return '';
+            const sections = documents.map(document => {
+                const provenance = (document.sourceMap || []).map(item => item.label).filter(Boolean).slice(0, 20).join(', ');
+                return [
+                    `## Document sélectionné : ${document.name}`,
+                    `Type: ${document.mimeType || document.extension || 'inconnu'}`,
+                    document.hash ? `SHA-256: ${document.hash}` : '',
+                    provenance ? `Repères disponibles: ${provenance}` : '',
+                    '',
+                    document.markdown
+                ].filter(line => line !== '').join('\n');
+            });
+            return `\n\n# CONTEXTE DOCUMENTAIRE SÉLECTIONNÉ POUR CETTE REQUÊTE\n\n${sections.join('\n\n---\n\n')}\n\n# FIN DU CONTEXTE DOCUMENTAIRE\n`;
+        },
+
         // --- Gestion des Conversations ---
         async loadConversations() {
             const app = this;
-            const conversations = await window.sealarcaDb.getConversations();
+            const conversations = this.activeFolderId ? await window.sealarcaDb.getConversations(this.activeFolderId) : [];
             this.conversations = conversations.map(conversation => {
                 const decorated = {
                     ...conversation,
@@ -407,7 +595,8 @@ document.addEventListener('alpine:init', () => {
                 _showReasoning: message._showReasoning !== false,
                 get senderInitial() { return message.role === 'assistant' ? 'S' : 'V'; },
                 get senderName() { return message.role === 'assistant' ? 'Sealarca Vault' : app.t('app.you'); },
-                get hasAttachments() { return Boolean(message.attachments && message.attachments.length); },
+                get hasAttachments() { return Boolean((message.documentRefs && message.documentRefs.length) || (message.attachments && message.attachments.length)); },
+                get visibleAttachments() { return (message.documentRefs || message.attachments || []).map((attachment, index) => ({ ...attachment, attachmentKey: attachment.id || attachment.name || ('attachment_' + index) })); },
                 get hasReasoning() { return Boolean(message.reasoning); },
                 get reasoningLabel() { return app.t(decorated._showReasoning ? 'reasoning.hide' : 'reasoning.show'); },
                 get reasoningVisible() { return decorated._showReasoning !== false; },
@@ -431,6 +620,7 @@ document.addEventListener('alpine:init', () => {
             this.activeConversationId = null;
             this.messages = [];
             this.inputPrompt = '';
+            this.selectedDocumentIds = [];
             this.attachedFiles = [];
             this.currentStreamingMessage = '';
             this.currentStreamingReasoning = '';
@@ -445,6 +635,7 @@ document.addEventListener('alpine:init', () => {
             this.activeConversationId = id;
             const loadedMessages = await window.sealarcaDb.getMessages(id);
             this.messages = loadedMessages.map(message => this.decorateMessage(message));
+            this.selectedDocumentIds = [];
             this.attachedFiles = [];
             this.currentStreamingMessage = '';
             this.currentStreamingReasoning = '';
@@ -498,6 +689,7 @@ document.addEventListener('alpine:init', () => {
                 const newConv = {
                     id: 'conv_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
                     title: titleText.length > 40 ? titleText.substring(0, 40) + '...' : titleText,
+                    folderId: this.activeFolderId || window.SEALARCA_DEFAULT_FOLDER_ID,
                     model: this.selectedModel,
                     roleId: this.selectedRole ? this.selectedRole.id : null,
                     createdAt: Date.now(),
@@ -508,24 +700,22 @@ document.addEventListener('alpine:init', () => {
                 await this.loadConversations();
             }
 
-            // 2. Préparer le contenu du message avec les pièces jointes
-            let fullContent = text;
-            const attachmentsMeta = [];
-
-            if (this.attachedFiles.length > 0) {
-                for (const doc of this.attachedFiles) {
-                    fullContent += doc.formattedPromptText;
-                    attachmentsMeta.push({ name: doc.name, size: doc.size, ext: doc.extension });
-                }
-            }
+            // 2. Conserver uniquement les références documentaires dans le message.
+            const selectedDocuments = await window.sealarcaDb.getDocumentsByIds(this.selectedDocumentIds);
+            const documentRefs = selectedDocuments.map(document => ({
+                id: document.id,
+                name: document.name,
+                size: document.size,
+                extension: document.extension,
+                hash: document.hash || null
+            }));
 
             const userMsg = {
                 id: 'msg_' + Date.now() + '_user',
                 conversationId: this.activeConversationId,
                 role: 'user',
-                content: text || (this.attachedFiles[0] ? `[${this.attachedFiles[0].name}]` : '...'),
-                fullPayload: fullContent,
-                attachments: attachmentsMeta,
+                content: text || (selectedDocuments[0] ? `[${selectedDocuments[0].name}]` : '...'),
+                documentRefs,
                 createdAt: Date.now()
             };
 
@@ -535,17 +725,19 @@ document.addEventListener('alpine:init', () => {
 
             // Réinitialiser les entrées
             this.inputPrompt = '';
+            this.selectedDocumentIds = [];
             this.attachedFiles = [];
             this.currentStreamingMessage = '';
             this.currentStreamingReasoning = '';
             this.isStreaming = true;
             this.scrollToBottom();
 
-            // 4. Préparer le contexte pour l'API
-            const apiMessages = this.messages.map(m => ({
-                role: m.role,
-                content: m.fullPayload || m.content
-            }));
+            // 4. Séparer l'historique du contexte documentaire explicitement sélectionné.
+            const apiMessages = this.buildConversationHistory();
+            const currentUserMessage = apiMessages[apiMessages.length - 1];
+            if (currentUserMessage && currentUserMessage.role === 'user' && selectedDocuments.length > 0) {
+                currentUserMessage.content += this.buildDocumentContext(selectedDocuments);
+            }
 
             const systemPrompt = this.selectedRole ? this.selectedRole.systemPrompt : null;
 
@@ -617,32 +809,19 @@ document.addEventListener('alpine:init', () => {
         },
 
         async processFiles(fileList) {
+            if (!this.activeFolderId) return;
             const maxFiles = 5;
-            const remaining = Math.max(0, maxFiles - this.attachedFiles.length);
-            if (remaining === 0) {
-                this.showToast(`Maximum ${maxFiles} fichiers par message.`, 5000);
-                return;
-            }
-            const files = Array.from(fileList).slice(0, remaining);
-            if (fileList.length > remaining) {
-                this.showToast(`Maximum ${maxFiles} fichiers par message.`, 5000);
-            }
-            for (let i = 0; i < files.length; i++) {
-                const file = files[i];
+            const files = Array.from(fileList).slice(0, maxFiles);
+            if (fileList.length > maxFiles) this.showToast(`Maximum ${maxFiles} fichiers par ajout.`, 5000);
+            for (const file of files) {
                 try {
                     this.showToast(`${file.name}...`);
                     const parsed = await window.sealarcaDocHandler.parseFile(file);
-                    const app = this;
-                    const attachment = {
-                        ...parsed,
-                        id: `attachment_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-                        remove() {
-                            const index = app.attachedFiles.indexOf(attachment);
-                            if (index >= 0) app.attachedFiles.splice(index, 1);
-                        }
-                    };
-                    this.attachedFiles.push(attachment);
-                    this.showToast(`✅ ${file.name}`);
+                    const duplicate = await window.sealarcaDb.findDocumentByHash(this.activeFolderId, parsed.hash);
+                    const saved = duplicate || await window.sealarcaDb.saveDocument({ ...parsed, folderId: this.activeFolderId });
+                    if (!this.selectedDocumentIds.includes(saved.id)) this.selectedDocumentIds.push(saved.id);
+                    await this.loadDocuments();
+                    this.showToast(duplicate ? `↩️ ${file.name} déjà présent et sélectionné` : `✅ ${file.name}`);
                 } catch (err) {
                     console.error('Erreur extraction document:', err);
                     this.showToast(`❌ ${file.name} : ${err.message}`);
@@ -651,7 +830,8 @@ document.addEventListener('alpine:init', () => {
         },
 
         removeAttachment(index) {
-            this.attachedFiles.splice(index, 1);
+            const document = this.attachedFiles[index];
+            if (document) this.toggleDocumentSelection(document.id);
         },
 
         // --- Utilitaire Rendu Markdown & Blocs de Code ---

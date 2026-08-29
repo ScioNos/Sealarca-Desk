@@ -5,7 +5,8 @@
 **Self-contained Desktop & Local Web Client for the Swiss AI Gateway [Sealarca](https://sealarca.ch)**  
 *AI in a digital vault for highly sensitive and regulated data.*
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-087F68.svg)](LICENSE)
+[![License: PolyForm Perimeter 1.0.1](https://img.shields.io/badge/License-PolyForm%20Perimeter%201.0.1-087F68.svg)](LICENSE)
+[![Release: v1.0.0](https://img.shields.io/badge/Release-v1.0.0-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.0.0)
 [![Zero-Install](https://img.shields.io/badge/Installation-0%20Install-101820.svg)](#-quick-start)
 [![Offline-Ready](https://img.shields.io/badge/Dependencies-100%25%20Local-137A52.svg)](#-architecture--confidentiality)
 
@@ -27,6 +28,8 @@ The application runs **entirely in your local browser**, requires zero server in
 ---
 
 ## ✨ Key Features
+
+* 🗂️ **Persistent folders and document library**: multiple conversations and reusable Markdown documents per folder, with source provenance and explicit per-request AI context selection.
 
 * 🔒 **Absolute Confidentiality & Anonymity**:
   * Zero telemetry, no intermediary backend, no third-party tracking.
@@ -92,7 +95,7 @@ Sealarca-Desk/
 ├── js/
 │   ├── i18n.js              # 5-Language dictionary (FR, DE, IT, EN, ES)
 │   ├── api.js               # Sealarca Vault API client (Auto-discovery + SSE streaming)
-│   ├── db.js                # Local IndexedDB persistence layer
+│   ├── db.js                # IndexedDB folders, documents, conversations and migrations
 │   ├── doc-handler.js       # Universal local document extractor
 │   └── app.js               # Root Alpine.js application store
 └── images/                  # Official Sealarca brand assets & provider icons
@@ -110,7 +113,7 @@ Sealarca-Desk/
 
 ## 📄 License
 
-This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
+This source-available project is licensed under the **PolyForm Perimeter License 1.0.1**. See [LICENSE](LICENSE). It is not presented as open-source software.
 
 Copyright (c) 2026 **eyelo SA (ScioNos)** — Switzerland.
 

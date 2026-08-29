@@ -32,6 +32,28 @@
                 </a>
             </div>
 
+
+            <!-- Dossiers / Projets -->
+            <div class="folder-panel">
+                <div class="folder-panel-header">
+                    <span x-text="appFolders"></span>
+                    <button type="button" class="folder-add-btn" @click="createFolder" :title="appNewFolder" aria-label="Nouveau dossier">+</button>
+                </div>
+                <div class="folder-list">
+                    <template x-for="folder in folders" :key="folder.id">
+                        <div class="folder-item" :class="folder.rowClass">
+                            <button type="button" class="folder-select" @click="folder.select">
+                                <span aria-hidden="true">▣</span>
+                                <span x-text="folder.name"></span>
+                            </button>
+                            <div class="folder-actions">
+                                <button type="button" class="conv-action-btn" @click="folder.edit" title="Modifier">✎</button>
+                                <button type="button" class="conv-action-btn" @click="folder.remove" :title="appDelete">×</button>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
             <!-- Bouton Nouvelle Conversation -->
             <button type="button" class="btn-new-chat" @click="newConversation" :title="appNewChat">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
@@ -96,6 +118,11 @@
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
                     </button>
 
+                    <div class="active-folder-label" title="Dossier actif">
+                        <span aria-hidden="true">▣</span>
+                        <span x-text="activeFolderName"></span>
+                    </div>
+
                     <!-- Sélecteur de Modèle du Vault -->
                     <div style="position: relative;">
                         <select class="model-picker" :value="selectedModel" @change="updateSelectedModel" :disabled="modelsDisabled">
@@ -110,6 +137,11 @@
                 </div>
 
                 <div class="header-right">
+                    <button type="button" class="header-documents-btn" @click="openDocuments" :title="appDocuments">
+                        <span aria-hidden="true">📚</span>
+                        <span x-text="appDocuments"></span>
+                    </button>
+
                     <!-- Sélecteur de langue avec drapeaux locaux -->
                     <div class="language-switcher" role="group" aria-label="Langue de l’interface">
                         <template x-for="lang in supportedLangs" :key="lang.code">
@@ -186,7 +218,7 @@
                                 <!-- Pièces jointes (si message utilisateur) -->
                             <template x-if="msg.hasAttachments">
                                     <div class="msg-attachments-list">
-                                        <template x-for="doc in msg.attachments" :key="doc.name">
+                                        <template x-for="doc in msg.visibleAttachments" :key="doc.attachmentKey">
                                             <span class="msg-attachment-item">
                                                 <span>📎</span>
                                                 <span x-text="doc.name"></span>
@@ -289,7 +321,7 @@
 
                             <button type="button" class="toolbar-btn" @click="openFilePicker" :title="inputAttachDoc">
                                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
-                                <span x-text="inputAttachDoc"></span>
+                                <span x-text="appAddDocuments"></span>
                             </button>
 
                             <button type="button" class="toolbar-btn" @click="openRoles" :title="appRoles">
@@ -406,6 +438,78 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" @click="closeRoles" x-text="rolesCloseLabel"></button>
                 </div>
+            </div>
+        </div>
+
+
+        <!-- Bibliothèque documentaire du dossier -->
+        <div class="modal-overlay" x-cloak x-show="isDocumentsOpen" x-transition>
+            <div class="modal-card modal-card-wide" role="dialog" aria-modal="true" aria-labelledby="documents-title" @click.away="closeDocuments">
+                <div class="modal-header">
+                    <div>
+                        <h2 class="modal-title" id="documents-title" x-text="appDocuments"></h2>
+                        <p class="modal-subtitle" x-text="activeFolderName"></p>
+                    </div>
+                    <button type="button" class="modal-close" @click="closeDocuments" aria-label="Fermer">&times;</button>
+                </div>
+                <div class="modal-body document-library">
+                    <div class="document-library-toolbar">
+                        <p x-text="documentsSelectionHint"></p>
+                        <button type="button" class="btn btn-primary" @click="openFilePicker" x-text="appAddDocuments"></button>
+                    </div>
+                    <div class="document-empty" x-show="hasNoDocuments" x-text="documentsEmptyLabel"></div>
+                    <div class="document-list" x-show="hasDocuments">
+                        <template x-for="doc in documents" :key="doc.id">
+                            <div class="document-row" :class="doc.selectionClass">
+                                <button type="button" class="document-select" @click="doc.toggle" :aria-pressed="doc.isSelected">
+                                    <span class="document-check" x-text="doc.selectionMark"></span>
+                                    <span class="document-main">
+                                        <strong x-text="doc.name"></strong>
+                                        <small><span x-text="doc.extension"></span> · <span x-text="doc.sizeLabel"></span></small>
+                                    </span>
+                                </button>
+                                <div class="document-actions">
+                                    <button type="button" class="btn btn-secondary btn-compact" @click="doc.preview" x-text="documentsPreviewLabel"></button>
+                                    <button type="button" class="btn btn-secondary btn-compact" @click="doc.download" x-text="documentsDownloadLabel"></button>
+                                    <button type="button" class="conv-action-btn" @click="doc.remove" :title="appDelete">×</button>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" @click="closeDocuments" x-text="documentsCloseLabel"></button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Consultation du Markdown canonique et de sa provenance -->
+        <div class="modal-overlay" x-cloak x-show="isDocumentPreviewOpen" x-transition>
+            <div class="modal-card modal-card-document" role="dialog" aria-modal="true" aria-labelledby="document-preview-title">
+                <template x-if="previewDocument">
+                    <div class="document-preview-shell">
+                        <div class="modal-header">
+                            <div>
+                                <h2 class="modal-title" id="document-preview-title" x-text="documentPreviewTitle"></h2>
+                                <p class="modal-subtitle"><span x-text="previewDocument.mimeType"></span> · <span x-text="documentPreviewSize"></span></p>
+                            </div>
+                            <button type="button" class="modal-close" @click="closeDocumentPreview" aria-label="Fermer">&times;</button>
+                        </div>
+                        <div class="document-preview-meta">
+                            <strong x-text="documentsProvenanceLabel"></strong>
+                            <div class="source-map-list">
+                                <template x-for="source in previewDocument.sourceMap" :key="source.id">
+                                    <span class="source-map-chip" x-text="source.label"></span>
+                                </template>
+                            </div>
+                        </div>
+                        <div class="modal-body document-preview-markdown markdown-body" x-safe-html="previewMarkdown"></div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" @click="downloadPreviewDocument" x-text="documentsDownloadOriginalLabel"></button>
+                            <button type="button" class="btn btn-primary" @click="closeDocumentPreview" x-text="documentsCloseLabel"></button>
+                        </div>
+                    </div>
+                </template>
             </div>
         </div>
 

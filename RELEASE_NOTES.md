@@ -1,16 +1,17 @@
-# Sealarca-Desk v1.0.0
+# Sealarca Desk v1.0.0
 
-First public release of **Sealarca-Desk**, the local client for Sealarca Vault.
+This is the **first official public release** of Sealarca Desk, a source-available local client for Sealarca Vault.
 
 ## Highlights
 
-- Enter only your Sealarca API key; available models are discovered automatically.
-- OpenAI-compatible `POST /v1/responses` support with typed SSE streaming.
-- Strict Content Security Policy using the official Alpine.js CSP build.
-- Local parsing for PDF, DOCX, XLSX, PPTX, ODT, ODS, CSV and text documents.
-- Light and dark themes with five interface languages.
-- Local conversation history; API keys are retained only for the current browser session.
-- Hardened Markdown rendering and file-processing safety limits.
+- Folders/projects group multiple conversations, persistent documents, and project metadata.
+- Documents retain their original local file, normalized canonical Markdown, MIME type, extension, size, SHA-256 hash, and provenance source map.
+- PDF pages, PowerPoint slides, spreadsheet sheets/ranges, and reliable non-paginated locators are preserved where available.
+- Users explicitly select which folder documents are sent for each request; full documents are not automatically reinjected with conversation history.
+- IndexedDB schema version 2 retains the migration needed to recover data created with the development schema version 1, without deleting conversations or messages.
+- Chunk storage is prepared as a derivation of canonical Markdown for future large-document processing.
+- Available models are discovered dynamically from `GET /v1/models`.
+- Licensed under the PolyForm Perimeter License 1.0.1 and presented as source available.
 
 ## Download
 
