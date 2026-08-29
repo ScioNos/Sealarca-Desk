@@ -2,119 +2,95 @@
 
 # 🛡️ Sealarca-Desk
 
-**Eigenständiger Desktop- & Lokaler Web-Client für das Schweizer KI-Gateway [Sealarca](https://sealarca.ch)**  
-*KI im digitalen Tresor für hochsensible und regulierte Daten.*
+**Eigenständiger lokaler Browser-Client für das Schweizer KI-Gateway [Sealarca](https://sealarca.ch)**  
+*Lokale Dokumentaufbereitung, explizite Kontextauswahl und direkter Vault-Zugriff.*
 
-[![License: PolyForm Perimeter 1.0.1](https://img.shields.io/badge/License-PolyForm%20Perimeter%201.0.1-087F68.svg)](LICENSE)
-[![Release: v1.0.0](https://img.shields.io/badge/Release-v1.0.0-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.0.0)
-[![Zero-Install](https://img.shields.io/badge/Installation-0%20Install-101820.svg)](#-schnellstart)
-[![Offline-Ready](https://img.shields.io/badge/Abh%C3%A4ngigkeiten-100%25%20Lokal-137A52.svg)](#-architektur--vertraulichkeit)
-
----
+[![Lizenz: PolyForm Perimeter 1.0.1](https://img.shields.io/badge/Lizenz-PolyForm%20Perimeter%201.0.1-087F68.svg)](LICENSE)
+[![Version: v1.0.0](https://img.shields.io/badge/Version-v1.0.0-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.0.0)
 
 🌐 **Language / Langue / Sprache / Lingua / Idioma**  
 [English 🇬🇧](README.md) · [Français 🇫🇷](README.fr.md) · **Deutsch** · [Italiano 🇮🇹](README.it.md) · [Español 🇪🇸](README.es.md)
 
----
-
 </div>
 
-## 📖 Übersicht
+## Überblick
 
-**Sealarca-Desk** ist eine Chat- und Dokumentenanalyse-Oberfläche, die speziell für Berufsgeheimnisträger und streng regulierte Branchen entwickelt wurde (**Anwaltskanzleien, Notariate, Steuerberater & Treuhänder, Banken & Finanzinstitute, Gesundheitswesen, Compliance-Beauftragte**).
+Sealarca-Desk ist eine statische Single-Page-Anwendung für Chats und dokumentgestützte Arbeit mit Sealarca Vault. Oberfläche und Laufzeitbibliotheken werden lokal geladen; Modellabfrage, Chat-Antworten und KI-generierte Dokumentprofile benötigen eine Netzwerkverbindung zum festen API-Endpunkt `https://sealarca.ch/v1`.
 
-Die Anwendung läuft **vollständig im lokalen Browser Ihres Rechners**, benötigt keine Server-Infrastruktur, verzichtet auf externe Tracker und verbindet sich direkt mit Ihrem **Sealarca Vault** über Ihre API-Schlüssel.
+Zur Laufzeit werden weder ein zwischengeschaltetes Anwendungs-Backend noch Analyse-SDKs oder ein CDN verwendet.
 
----
+## Aktuelle Funktionen
 
-## ✨ Hauptfunktionen
+- **Ordner/Projekte** mit mehreren Unterhaltungen und einer wiederverwendbaren Dokumentbibliothek.
+- **Lokaler Gesprächsverlauf** mit Titelfilter in der Seitenleiste.
+- **Dokumentablage in IndexedDB**: Original-Blob, kanonisches Markdown, MIME-Typ, Erweiterung, Größe, SHA-256-Hash (wenn Web Crypto verfügbar ist), Extraktionsmetadaten und Herkunftskarte.
+- **Unterstützte Importe**: `.pdf`, `.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods`, `.csv`, `.txt`, `.md`, `.json`, `.rtf`, `.log` und `.xml`.
+- **Dokumentgrenzen**: 20 MiB pro Datei, 500.000 extrahierte Zeichen, 100 PDF-Seiten, 100 Zeilen pro Tabellen-/CSV-Blatt und höchstens 5 Dateien pro Hinzufügen-Vorgang.
+- **Manueller Kontextmodus** zur Auswahl der Dokumente für die nächste Anfrage.
+- **Automatischer Kontextmodus**, der Ordnerdokumente lokal bewertet und relevante, zitierfähige Auszüge aus höchstens 5 Dokumenten sendet.
+- **Dokumentarbeitsbereich** mit lokaler Volltextsuche, Markdown-Vorschau, Quellenangaben, Download der Originaldatei, Ordnerübersicht und Export der Übersicht als `index.md`.
+- **KI-generierte Dokumentprofile** (Zusammenfassung, Personen, Organisationen, Daten und wichtige Punkte) über eine persistente Queue mit zwei Workern, Wiederholung, Abbruch, Deduplizierung und Wiederaufnahme nach Unterbrechung. Dafür wird das Dokument-Markdown an das gewählte Sealarca-Modell gesendet.
+- **Responses-API-Integration**: dynamische Modellabfrage über `GET /v1/models`; Streaming- und Nicht-Streaming-Anfragen über `POST /v1/responses` mit `store: false`, Timeout, HTTP-Backoff und Abbruch.
+- **Streaming-Ausgabe** mit Reasoning-Bereich, wenn das Gateway unterstützte Reasoning-Summary-Ereignisse liefert.
+- **Vier integrierte Rollen**: Recht & Vertragsrecht, Steuern & Treuhand, Compliance & Berufsgeheimnis sowie Executive Summary & Redaktion.
+- **Fünf Oberflächensprachen**: Französisch, Deutsch, Italienisch, Englisch und Spanisch.
+- **Helles/dunkles Design**, strikte CSP, bereinigte Markdown-Ausgabe und lokale Abhängigkeiten.
 
-* 🗂️ **Persistente Ordner und Dokumentenbibliothek**: mehrere Gespräche und wiederverwendbare Markdown-Dokumente je Ordner, mit Quellenbezug und expliziter Kontextauswahl pro Anfrage.
+## Daten- und Netzwerkmodell
 
-* 🔒 **Absolute Vertraulichkeit & Anonymität**:
-  * Keine Telemetrie, kein zwischengeschalteter Server.
-  * Chat-Verlauf und Dokumente verbleiben ausschließlich in Ihrer lokalen Browser-Datenbank (**IndexedDB**).
-* 🔑 **Null-Konfigurations-Erlebnis**:
-  * Geben Sie einfach Ihren **Sealarca API-Schlüssel** ein.
-  * Automatische und dynamische Modellerkennung Ihres Vaults (`GET /v1/models`).
-* 📄 **Universeller 100% lokaler Multi-Dokumenten-Parser**:
-  * Ziehen Sie beliebige Geschäftsdokumente per Drag & Drop in die Oberfläche:
-    * **Microsoft Office**: Word (`.docx`), Excel (`.xlsx`), PowerPoint (`.pptx`).
-    * **LibreOffice / OpenDocument**: Text (`.odt`), Tabellen (`.ods`).
-    * **PDF & Text**: PDF-Dokumente (`.pdf`), CSV-Tabellen (`.csv`), Markdown & Text (`.txt`, `.md`, `.json`).
-  * Text- und Tabellenextraktion in strukturiertes Markdown erfolgt **direkt auf Ihrem Rechner** vor der verschlüsselten Übertragung in den Vault.
-* 🧠 **Echtzeit-Streaming & Tiefenbegründung**:
-  * Flüssiges Server-Sent Events (SSE) Streaming mit speziellem einklappbarem Bereich für Denk- und Begründungsprozesse (*Thinking Mode*).
-* ⚖️ **Integrierte Schweizer Fachrollen (Personas)**:
-  * *Recht & Vertragsrecht* (Klauselprüfung, Risikoanalyse, OR/DSG-Konformität).
-  * *Steuer- & Treuhandexperte* (Bilanzen, Erfolgsrechnungen, Finanzkennzahlen).
-  * *Compliance & Berufsgeheimnis* (GwG/VSB-Sorgfaltspflichten, regulatorische Prüfungen).
-  * *Executive Summary & Redaktion* (Präzise Direktionsmemos und Protokolle).
-* 🌐 **Vollständige 5-Sprachen-Unterstützung**:
-  * Unterstützung für **Deutsch (`DE`)**, **Français (`FR`)**, **Italiano (`IT`)**, **English (`EN`)** und **Español (`ES`)**.
-  * Automatische Erkennung der Systemsprache und Umschaltung mit einem Klick im Header.
-* ⚡ **Null Installation / 100% Offline (Kein CDN)**:
-  * Weder `Node.js` noch `npm` erforderlich.
-  * Alle Bibliotheken sind lokal im Ordner `vendor/` gespeichert.
+- Der API-Schlüssel bleibt für den aktuellen Browser-Tab/die aktuelle Sitzung in `sessionStorage` und wird bei der Migration aus dem früheren IndexedDB-Speicher entfernt.
+- Unterhaltungen, Nachrichten, Ordner, Dokumente, Profile, Verarbeitungsjobs, Rollen, Sprache, Modellwahl und UI-Einstellungen liegen lokal in IndexedDB. Das Design liegt in `localStorage`.
+- Chat-Anfragen senden den Textverlauf sowie nur manuell gewählte Dokumente oder automatisch gewählte Auszüge.
+- Profiljobs senden das Markdown des betreffenden Dokuments an das gewählte Sealarca-Modell.
+- Anwendungs-API-Aufrufe richten sich an `https://sealarca.ch/v1`. Die CSP erlaubt zusätzlich lokale Entwicklungsursprünge auf `localhost` und `127.0.0.1`.
+- „Lokal“ und „ohne CDN“ beziehen sich auf Laden, Analyse, Indexierung und Speicherung; KI-Funktionen arbeiten nicht offline.
 
----
+## Schnellstart
 
-## 🚀 Schnellstart
+1. Release-Archiv herunterladen und entpacken.
+2. `Sealarca-Desk/index.html` in einem modernen Browser öffnen.
+3. Einen Sealarca-API-Schlüssel eingeben. Ohne Sitzungsschlüssel öffnet sich der Konfigurationsdialog automatisch.
+4. Ein gefundenes Modell wählen, einen Ordner erstellen oder öffnen und danach chatten oder Dokumente hinzufügen.
 
-### 1. Anwendung starten
-Doppelklicken Sie einfach auf **`index.html`** in Ihrem Datei-Explorer.  
-Die Anwendung öffnet sich sofort in Ihrem Standard-Webbrowser (Chrome, Edge, Safari, Firefox).
+Die Sealarca-API muss Anfragen von einer lokalen `file://`-Seite zulassen. Blockiert eine Browser- oder Organisationsrichtlinie diesen Ursprung, kann das Verzeichnis über einen genehmigten lokalen statischen Server bereitgestellt werden, ohne den API-Endpunkt zu ändern.
+
+## Architektur
 
 ```text
 Sealarca-Desk/
-├── index.html       <─── Hier doppelklicken zum Starten!
-```
-
-### 2. API-Schlüssel eingeben
-1. Beim ersten Start öffnet sich das Einstellungsfenster automatisch.
-2. Geben Sie Ihren Sealarca API-Schlüssel ein (erhältlich in Ihrem Kundenportal auf [sealarca.ch](https://sealarca.ch)).
-3. Klicken Sie auf **"Speichern"**: Ihre Vault-Modelle werden automatisch synchronisiert.
-
----
-
-## 🛠️ Technische Architektur
-
-```text
-Sealarca-Desk/
-├── index.html               # Reaktive Single-Page-Anwendung (Alpine.js)
-├── css/
-│   ├── theme.css            # Offizielle Sealarca Design-Tokens & Dark Mode
-│   ├── layout.css           # Responsive Flexbox/Grid-Struktur
-│   └── components.css       # Nachrichtenblasen, Markdown, Code-Blöcke
-├── vendor/                  # 100% lokale Abhängigkeiten (Kein CDN)
-│   ├── alpine-csp.min.js    # CSP-kompatibles reaktives UI-Framework
-│   ├── marked.min.js        # Markdown-Parser
-│   ├── purify.min.js        # XSS-Schutz
-│   ├── pdf.min.js           # Lokaler PDF-Extraktor
-│   └── jszip.min.js         # Lokale Dekomprimierung DOCX / XLSX / PPTX / ODF
+├── index.html                 # Alpine.js-Oberfläche und CSP
+├── css/                       # Designs, Layout und Komponenten
+├── images/                    # Lokale Logos und Sprachflaggen
 ├── js/
-│   ├── i18n.js              # 5-Sprachen-Wörterbuch (FR, DE, IT, EN, ES)
-│   ├── api.js               # Sealarca Vault API-Client (SSE-Streaming)
-│   ├── db.js                # Lokale IndexedDB-Persistenz
-│   ├── doc-handler.js       # Universeller Dokumenten-Extraktor
-│   └── app.js               # Alpine.js Hauptanwendungs-Store
-└── images/                  # Offizielle Sealarca Marken-Assets & Icons
+│   ├── boot-theme.js          # Wendet das Design vor dem Rendern an
+│   ├── i18n.js                # Wörterbücher für fünf Sprachen
+│   ├── db.js                  # IndexedDB-Schema v3 und Persistenz
+│   ├── doc-handler.js         # Lokale Extraktion, Markdown, Herkunft
+│   ├── api.js                 # Fester Sealarca-Responses-API-Client
+│   ├── p1.js                  # Suche, Profile, Zitate und persistente Queue
+│   └── app.js                 # Alpine.js-Zustand und Abläufe
+├── vendor/                    # Alpine CSP, JSZip, Marked, DOMPurify, PDF.js
+├── tests/                     # Node.js-Tests
+└── scripts/build-release.ps1  # ZIP- und SHA-256-Erstellung
 ```
 
----
+## Entwicklung und Prüfung
 
-## 🔒 Sicherheit & Datenschutz
+Node.js wird für die veröffentlichte Anwendung nicht benötigt, wohl aber für die Repository-Prüfungen:
 
-1. **Content Security Policy (CSP)**: Verhindert das Nachladen externer, nicht autorisierter Skripte.
-2. **Keine Telemetrie**: Keine Tracking-Pixel, Cookies oder Analyse-Tools.
-3. **Verschlüsseltes Vault-Gateway**: Alle Anfragen an `https://sealarca.ch/v1` erfolgen über sicheres TLS direkt in isolierte Schweizer Hardware-Enklaven.
+```bash
+npm test
+npm run check
+```
 
----
+Release-Artefakte unter PowerShell erstellen:
 
-## 📄 Lizenz
+```powershell
+npm run release:build
+```
 
-Dieses **source-available** Projekt steht unter der **PolyForm Perimeter License 1.0.1**. Siehe [LICENSE](LICENSE). Es wird nicht als Open-Source-Software angeboten.
+## Lizenz
+
+Dieses **source-available** Projekt steht unter der **PolyForm Perimeter License 1.0.1**. Siehe [LICENSE](LICENSE). Es wird nicht als Open-Source-Software bezeichnet.
 
 Copyright (c) 2026 **eyelo SA (ScioNos)** — Schweiz.
-
-

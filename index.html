@@ -240,6 +240,9 @@
 
                                 <!-- Rendu Markdown du contenu -->
                             <div class="markdown-body" x-safe-html="msg.renderedContent"></div>
+                            <template x-if="msg.hasCitations">
+                                <div class="message-citations"><strong>Sources citées</strong><template x-for="citation in msg.visibleCitations" :key="citation.documentId + citation.sourceId"><button type="button" @click="citation.open" x-text="citation.label"></button></template></div>
+                            </template>
                             </div>
                         </div>
                     </template>
@@ -442,44 +445,134 @@
         </div>
 
 
-        <!-- Bibliothèque documentaire du dossier -->
+        <!-- Espace documentaire du dossier -->
         <div class="modal-overlay" x-cloak x-show="isDocumentsOpen" x-transition>
-            <div class="modal-card modal-card-wide" role="dialog" aria-modal="true" aria-labelledby="documents-title" @click.away="closeDocuments">
-                <div class="modal-header">
+            <div class="modal-card modal-card-wide folder-workspace" role="dialog" aria-modal="true" aria-labelledby="documents-title" @click.away="closeDocuments">
+                <div class="modal-header folder-workspace-header">
                     <div>
-                        <h2 class="modal-title" id="documents-title" x-text="appDocuments"></h2>
-                        <p class="modal-subtitle" x-text="activeFolderName"></p>
+                        <span class="workspace-kicker">DOSSIER ACTIF</span>
+                        <h2 class="modal-title" id="documents-title" x-text="activeFolderName"></h2>
+                        <p class="modal-subtitle">Vue d’ensemble, recherche locale et traitements documentaires</p>
                     </div>
                     <button type="button" class="modal-close" @click="closeDocuments" aria-label="Fermer">&times;</button>
                 </div>
-                <div class="modal-body document-library">
-                    <div class="document-library-toolbar">
-                        <p x-text="documentsSelectionHint"></p>
-                        <button type="button" class="btn btn-primary" @click="openFilePicker" x-text="appAddDocuments"></button>
-                    </div>
-                    <div class="document-empty" x-show="hasNoDocuments" x-text="documentsEmptyLabel"></div>
-                    <div class="document-list" x-show="hasDocuments">
-                        <template x-for="doc in documents" :key="doc.id">
-                            <div class="document-row" :class="doc.selectionClass">
-                                <button type="button" class="document-select" @click="doc.toggle" :aria-pressed="doc.isSelected">
-                                    <span class="document-check" x-text="doc.selectionMark"></span>
-                                    <span class="document-main">
-                                        <strong x-text="doc.name"></strong>
-                                        <small><span x-text="doc.extension"></span> · <span x-text="doc.sizeLabel"></span></small>
-                                    </span>
-                                </button>
-                                <div class="document-actions">
-                                    <button type="button" class="btn btn-secondary btn-compact" @click="doc.preview" x-text="documentsPreviewLabel"></button>
-                                    <button type="button" class="btn btn-secondary btn-compact" @click="doc.download" x-text="documentsDownloadLabel"></button>
-                                    <button type="button" class="conv-action-btn" @click="doc.remove" :title="appDelete">×</button>
-                                </div>
+                <div class="workspace-tabs" role="tablist" aria-label="Espace documentaire">
+                    <button type="button" class="workspace-tab" :class="overviewTabClass" @click="openOverviewTab">Vue d’ensemble</button>
+                    <button type="button" class="workspace-tab" :class="libraryTabClass" @click="openLibraryTab">Documents</button>
+                    <button type="button" class="workspace-tab" :class="searchTabClass" @click="openSearchTab">Recherche locale</button>
+                    <button type="button" class="workspace-tab" :class="jobsTabClass" @click="openJobsTab">Traitements</button>
+                </div>
+
+                <div class="modal-body workspace-body">
+                    <section x-show="isOverviewTab" class="overview-panel">
+                        <div class="overview-commandbar">
+                            <div>
+                                <h3>Registre du dossier</h3>
+                                <p>Cette vue est calculée depuis les documents et fiches conservés dans IndexedDB.</p>
                             </div>
-                        </template>
-                    </div>
+                            <div class="overview-actions">
+                                <button type="button" class="btn btn-secondary" @click="exportFolderOverviewMarkdown">Exporter index.md</button>
+                                <button type="button" class="btn btn-primary" @click="queueAllDocumentProfiles">Générer les fiches manquantes</button>
+                            </div>
+                        </div>
+                        <div class="overview-stats">
+                            <div class="overview-stat"><span>Documents</span><strong x-text="folderOverview.documentCount"></strong></div>
+                            <div class="overview-stat"><span>Volume connu</span><strong x-text="folderOverviewPagesLabel"></strong></div>
+                            <div class="overview-stat"><span>Fiches disponibles</span><strong x-text="folderOverviewProfilesLabel"></strong></div>
+                        </div>
+                        <div class="overview-grid">
+                            <article class="overview-section overview-documents">
+                                <div class="overview-section-title"><span>Documents</span><small x-text="folderOverview.documentCount"></small></div>
+                                <div class="overview-empty" x-show="hasNoDocuments">Ajoutez un document pour constituer le dossier.</div>
+                                <div class="overview-document-list" x-show="hasDocuments">
+                                    <template x-for="doc in documents" :key="doc.id">
+                                        <button type="button" class="overview-document" @click="doc.preview">
+                                            <span class="document-type-mark" x-text="doc.extension"></span>
+                                            <span><strong x-text="doc.name"></strong><small><span x-text="doc.pageLabel"></span><span x-text="doc.profileStatusLabel"></span></small></span>
+                                            <span aria-hidden="true">↗</span>
+                                        </button>
+                                    </template>
+                                </div>
+                            </article>
+                            <article class="overview-section">
+                                <div class="overview-section-title"><span>Personnes / organisations</span></div>
+                                <div class="entity-cloud">
+                                    <template x-for="person in folderOverview.people" :key="person"><span class="entity-chip person" x-text="person"></span></template>
+                                    <template x-for="organization in folderOverview.organizations" :key="organization"><span class="entity-chip organization" x-text="organization"></span></template>
+                                </div>
+                                <div class="overview-empty" x-show="hasNoOverviewEntities">Les entités apparaîtront après génération des fiches.</div>
+                            </article>
+                            <article class="overview-section">
+                                <div class="overview-section-title"><span>Dates principales</span></div>
+                                <ul class="overview-fact-list">
+                                    <template x-for="item in folderOverview.dates" :key="item.id"><li><button type="button" class="overview-date-link" @click="item.open"><strong x-text="item.date"></strong><span x-text="item.label"></span><small x-text="item.referenceLabel"></small></button></li></template>
+                                </ul>
+                            </article>
+                            <article class="overview-section">
+                                <div class="overview-section-title"><span>Éléments importants</span></div>
+                                <div class="overview-fact-list">
+                                    <template x-for="item in folderOverview.items" :key="item.id">
+                                        <button type="button" class="important-item" @click="item.open"><strong x-text="item.label"></strong><span x-text="item.details"></span><small x-text="item.referenceLabel"></small></button>
+                                    </template>
+                                </div>
+                            </article>
+                        </div>
+                    </section>
+
+                    <section x-show="isLibraryTab" class="document-library">
+                        <div class="document-library-toolbar library-toolbar-stacked">
+                            <div>
+                                <strong>Contexte de la prochaine demande</strong>
+                                <div class="context-mode-switch" role="group" aria-label="Mode de sélection du contexte">
+                                    <button type="button" :class="manualContextClass" @click="useManualContext">Manuel</button>
+                                    <button type="button" :class="automaticContextClass" @click="useAutomaticContext">Automatique local</button>
+                                </div>
+                                <p x-show="isManualContext" x-text="documentsSelectionHint"></p>
+                                <p x-show="isAutomaticContext">Seuls les documents localement pertinents pour la question seront transmis.</p>
+                            </div>
+                            <button type="button" class="btn btn-primary" @click="openFilePicker" x-text="appAddDocuments"></button>
+                        </div>
+                        <div class="document-empty" x-show="hasNoDocuments" x-text="documentsEmptyLabel"></div>
+                        <div class="document-list" x-show="hasDocuments">
+                            <template x-for="doc in documents" :key="doc.id">
+                                <div class="document-row" :class="doc.selectionClass">
+                                    <button type="button" class="document-select" @click="doc.toggle" :aria-pressed="doc.isSelected">
+                                        <span class="document-check" x-text="doc.selectionMark"></span>
+                                        <span class="document-main"><strong x-text="doc.name"></strong><small><span x-text="doc.extension"></span> · <span x-text="doc.sizeLabel"></span> · <span x-text="doc.profileStatusLabel"></span></small></span>
+                                    </button>
+                                    <div class="document-actions">
+                                        <button type="button" class="btn btn-secondary btn-compact" @click="doc.generateProfile">Générer la fiche</button>
+                                        <button type="button" class="btn btn-secondary btn-compact" @click="doc.preview" x-text="documentsPreviewLabel"></button>
+                                        <button type="button" class="btn btn-secondary btn-compact" @click="doc.download" x-text="documentsDownloadLabel"></button>
+                                        <button type="button" class="conv-action-btn" @click="doc.remove" :title="appDelete">×</button>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </section>
+
+                    <section x-show="isSearchTab" class="search-panel">
+                        <label class="local-search-box"><span>⌕</span><input type="search" :value="documentSearchQuery" @input="updateDocumentSearch" placeholder="Rechercher dans le Markdown du dossier…"></label>
+                        <p class="search-scope">Recherche locale — aucun contenu n’est envoyé au réseau.</p>
+                        <div class="search-results" x-show="hasDocumentSearchResults">
+                            <template x-for="result in documentSearchResults" :key="result.id">
+                                <button type="button" class="search-result" @click="result.open"><span class="search-result-reference" x-text="result.reference"></span><p x-text="result.excerpt"></p><small><span x-text="result.matchedTermsLabel"></span></small></button>
+                            </template>
+                        </div>
+                        <div class="document-empty" x-show="hasNoDocumentSearchResults">Aucun passage correspondant dans ce dossier.</div>
+                    </section>
+
+                    <section x-show="isJobsTab" class="jobs-panel">
+                        <div class="overview-commandbar"><div><h3>Queue locale</h3><p>Deux traitements simultanés au maximum. Les checkpoints permettent la reprise.</p></div><button type="button" class="btn btn-primary" @click="queueAllDocumentProfiles">Ajouter les fiches manquantes</button></div>
+                        <div class="document-empty" x-show="hasNoProcessingJobs">Aucun traitement enregistré.</div>
+                        <div class="job-list" x-show="hasProcessingJobs">
+                            <template x-for="job in processingJobs" :key="job.id">
+                                <div class="job-row"><span class="job-status" :class="job.status" x-text="job.statusLabel"></span><span class="job-main"><strong x-text="job.documentName"></strong><small><span x-text="job.checkpointStage"></span><span x-show="job.lastError" x-text="job.lastError"></span></small></span><button type="button" class="btn btn-secondary btn-compact" x-show="job.canCancel" @click="job.cancel">Annuler</button><button type="button" class="btn btn-secondary btn-compact" x-show="job.canRetry" @click="job.retry">Reprendre</button></div>
+                            </template>
+                        </div>
+                    </section>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-primary" @click="closeDocuments" x-text="documentsCloseLabel"></button>
-                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-primary" @click="closeDocuments" x-text="documentsCloseLabel"></button></div>
             </div>
         </div>
 
@@ -503,7 +596,14 @@
                                 </template>
                             </div>
                         </div>
-                        <div class="modal-body document-preview-markdown markdown-body" x-safe-html="previewMarkdown"></div>
+                        <template x-if="previewHasProfile">
+                            <div class="document-profile-card">
+                                <div class="profile-heading"><span>FICHE DOCUMENTAIRE</span><strong x-text="previewProfile.documentType"></strong></div>
+                                <p x-text="previewProfile.summary"></p>
+                                <div class="profile-columns"><div><small>Personnes</small><div class="entity-cloud"><template x-for="person in previewProfile.people" :key="person"><span class="entity-chip person" x-text="person"></span></template></div></div><div><small>Organisations</small><div class="entity-cloud"><template x-for="organization in previewProfile.organizations" :key="organization"><span class="entity-chip organization" x-text="organization"></span></template></div></div></div>
+                            </div>
+                        </template>
+                        <div id="document-preview-markdown" class="modal-body document-preview-markdown markdown-body" x-safe-html="previewMarkdown"></div>
                         <div class="modal-footer">
                             <button type="button" class="btn btn-secondary" @click="downloadPreviewDocument" x-text="documentsDownloadOriginalLabel"></button>
                             <button type="button" class="btn btn-primary" @click="closeDocumentPreview" x-text="documentsCloseLabel"></button>
@@ -535,6 +635,7 @@
     <script src="js/db.js?v=1.0.0"></script>
     <script src="js/doc-handler.js?v=1.0.0"></script>
     <script src="js/api.js?v=1.0.0"></script>
+    <script src="js/p1.js?v=1.0.0"></script>
     <script src="js/app.js?v=1.0.0"></script>
     <script src="vendor/alpine-csp.min.js?v=3.16.2" defer></script>
 </body>

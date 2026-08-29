@@ -46,6 +46,14 @@ document.addEventListener('alpine:init', () => {
         selectedDocumentIds: [],
         attachedFiles: [], // documents du dossier sélectionnés pour la requête courante
         previewDocument: null,
+        documentProfiles: [],
+        processingJobs: [],
+        documentPanelTab: 'overview',
+        documentSearchQuery: '',
+        documentSearchResults: [],
+        contextMode: 'manual',
+        folderOverview: { documentCount: 0, pageCount: 0, profileCount: 0, people: [], organizations: [], dates: [], items: [] },
+        p1Queue: null,
         inputPrompt: '',
         isStreaming: false,
         currentStreamingMessage: '',
@@ -99,6 +107,8 @@ document.addEventListener('alpine:init', () => {
         get documentsDownloadOriginalLabel() { return this.t('documents.downloadOriginal'); },
         get documentPreviewTitle() { return this.previewDocument ? this.previewDocument.name : this.t('documents.preview'); },
         get documentPreviewSize() { return this.previewDocument ? this.formatBytes(this.previewDocument.size) : ''; },
+        get previewHasProfile() { return Boolean(this.previewDocument?.profile?.status === 'valid'); },
+        get previewProfile() { return this.previewDocument?.profile || { people: [], organizations: [], importantDates: [], importantItems: [] }; },
         get emptyTitle() { return this.t('empty.title'); },
         get emptyDesc() { return this.t('empty.desc'); },
         get emptyCard1Title() { return this.t('empty.card1Title'); },
@@ -156,6 +166,25 @@ document.addEventListener('alpine:init', () => {
         get hasModels() { return this.models.length > 0; },
         get hasToast() { return Boolean(this.toastMessage); },
         get streamingMarkdown() { return this.renderMarkdown(this.currentStreamingMessage || '...'); },
+        get isOverviewTab() { return this.documentPanelTab === 'overview'; },
+        get isLibraryTab() { return this.documentPanelTab === 'library'; },
+        get isSearchTab() { return this.documentPanelTab === 'search'; },
+        get isJobsTab() { return this.documentPanelTab === 'jobs'; },
+        get overviewTabClass() { return this.isOverviewTab ? 'active' : ''; },
+        get libraryTabClass() { return this.isLibraryTab ? 'active' : ''; },
+        get searchTabClass() { return this.isSearchTab ? 'active' : ''; },
+        get jobsTabClass() { return this.isJobsTab ? 'active' : ''; },
+        get manualContextClass() { return this.isManualContext ? 'active' : ''; },
+        get automaticContextClass() { return this.isAutomaticContext ? 'active' : ''; },
+        get hasDocumentSearchResults() { return this.documentSearchResults.length > 0; },
+        get hasNoDocumentSearchResults() { return Boolean(this.documentSearchQuery.trim()) && this.documentSearchResults.length === 0; },
+        get hasProcessingJobs() { return this.processingJobs.length > 0; },
+        get hasNoProcessingJobs() { return this.processingJobs.length === 0; },
+        get hasNoOverviewEntities() { return this.folderOverview.people.length === 0 && this.folderOverview.organizations.length === 0; },
+        get isManualContext() { return this.contextMode === 'manual'; },
+        get isAutomaticContext() { return this.contextMode === 'automatic'; },
+        get folderOverviewPagesLabel() { return this.folderOverview.pageCount > 0 ? this.folderOverview.pageCount + ' pages' : 'Pages non disponibles'; },
+        get folderOverviewProfilesLabel() { return this.folderOverview.profileCount + ' / ' + this.folderOverview.documentCount; },
 
         conversationRowClass() {
             return this.activeConversationId === this.conv.id ? 'active' : '';
@@ -173,7 +202,13 @@ document.addEventListener('alpine:init', () => {
         closeSettings() { if (this.hasConfiguredApi) this.isSettingsOpen = false; },
         openRoles() { this.isRolesOpen = true; },
         closeRoles() { this.isRolesOpen = false; },
-        openDocuments() { this.isDocumentsOpen = true; },
+        openDocuments() { this.isDocumentsOpen = true; this.openOverviewTab(); this.refreshFolderWorkspace(); },
+        openOverviewTab() { this.documentPanelTab = 'overview'; this.refreshFolderWorkspace(); },
+        openLibraryTab() { this.documentPanelTab = 'library'; },
+        openSearchTab() { this.documentPanelTab = 'search'; },
+        openJobsTab() { this.documentPanelTab = 'jobs'; this.loadProcessingJobs(); },
+        useManualContext() { this.contextMode = 'manual'; },
+        useAutomaticContext() { this.contextMode = 'automatic'; },
         closeDocuments() { this.isDocumentsOpen = false; },
         closeDocumentPreview() { this.isDocumentPreviewOpen = false; this.previewDocument = null; },
         closeOverlays() { this.closeRoles(); this.closeSettings(); this.closeDocuments(); this.closeDocumentPreview(); },
@@ -263,6 +298,7 @@ document.addEventListener('alpine:init', () => {
 
             // 7. Charger la dernière conversation du dossier actif si existante
             if (this.conversations.length > 0) await this.selectConversation(this.conversations[0].id);
+            await this.initializeP1Queue();
         },
 
         // --- Changement de langue ---
@@ -441,7 +477,8 @@ document.addEventListener('alpine:init', () => {
             this.inputPrompt = '';
             this.selectedDocumentIds = [];
             this.attachedFiles = [];
-            await Promise.all([this.loadDocuments(), this.loadConversations()]);
+            await Promise.all([this.loadDocuments(), this.loadConversations(), this.loadDocumentProfiles(), this.loadProcessingJobs()]);
+            this.buildFolderOverview();
             if (loadLatestConversation && this.conversations.length > 0) await this.selectConversation(this.conversations[0].id);
         },
 
@@ -494,16 +531,23 @@ document.addEventListener('alpine:init', () => {
             if (!this.activeFolderId) { this.documents = []; return; }
             const app = this;
             const documents = await window.sealarcaDb.getDocuments(this.activeFolderId);
+            const profiles = await window.sealarcaDb.getDocumentProfiles(this.activeFolderId);
+            const profileByDocument = new Map(profiles.map(profile => [profile.documentId, profile]));
+            this.documentProfiles = profiles;
             this.documents = documents.map(document => {
                 const decorated = {
                     ...document,
+                    profile: profileByDocument.get(document.id) || null,
                     get isSelected() { return app.selectedDocumentIds.includes(document.id); },
                     get selectionClass() { return decorated.isSelected ? 'selected' : ''; },
                     get selectionMark() { return decorated.isSelected ? '✓' : '+'; },
                     get sizeLabel() { return app.formatBytes(document.size); },
+                    get pageLabel() { const pages = Number(document.metadata?.pageCount || 0); return pages ? pages + ' pages' : ''; },
+                    get profileStatusLabel() { return decorated.profile?.status === 'valid' ? 'Fiche disponible' : 'Fiche à générer'; },
                     toggle() { app.toggleDocumentSelection(document.id); },
                     preview() { app.openDocumentPreview(document.id); },
                     download() { app.downloadDocument(document.id); },
+                    generateProfile() { app.queueDocumentProfile(document.id); },
                     remove() { app.deleteDocument(document.id); }
                 };
                 return decorated;
@@ -521,7 +565,10 @@ document.addEventListener('alpine:init', () => {
 
         async openDocumentPreview(id) {
             this.previewDocument = await window.sealarcaDb.getDocument(id);
-            if (this.previewDocument) this.isDocumentPreviewOpen = true;
+            if (this.previewDocument) {
+                this.previewDocument.profile = await window.sealarcaDb.getDocumentProfile(id);
+                this.isDocumentPreviewOpen = true;
+            }
         },
 
         async deleteDocument(id) {
@@ -557,21 +604,148 @@ document.addEventListener('alpine:init', () => {
             return this.messages.map(message => ({ role: message.role, content: message.content || '' }));
         },
 
-        buildDocumentContext(documents) {
+        buildDocumentContext(documents, query = '', mode = this.contextMode) {
             if (!documents.length) return '';
             const sections = documents.map(document => {
-                const provenance = (document.sourceMap || []).map(item => item.label).filter(Boolean).slice(0, 20).join(', ');
-                return [
-                    `## Document sélectionné : ${document.name}`,
-                    `Type: ${document.mimeType || document.extension || 'inconnu'}`,
-                    document.hash ? `SHA-256: ${document.hash}` : '',
-                    provenance ? `Repères disponibles: ${provenance}` : '',
-                    '',
-                    document.markdown
-                ].filter(line => line !== '').join('\n');
+                const sourceMap = Array.isArray(document.sourceMap) ? document.sourceMap : [];
+                const excerpts = mode === 'automatic'
+                    ? window.SealarcaP1.citableExcerpts(document, query, { limit: 8 })
+                    : sourceMap.map(source => ({
+                        reference: window.SealarcaP1.sourceReference(document, source),
+                        excerpt: String(document.markdown || '').slice(Number(source.markdownStart || 0), Number(source.markdownEnd || 0)).trim()
+                    })).filter(item => item.excerpt);
+                if (!excerpts.length) {
+                    return ['## Document sélectionné : ' + document.name, 'Type: ' + (document.mimeType || document.extension || 'inconnu'), '', String(document.markdown || '')].join('\n');
+                }
+                return ['## Document sélectionné : ' + document.name, 'Type: ' + (document.mimeType || document.extension || 'inconnu'), '', ...excerpts.map(item => '### SOURCE: ' + item.reference + '\n' + item.excerpt)].join('\n\n');
             });
-            return `\n\n# CONTEXTE DOCUMENTAIRE SÉLECTIONNÉ POUR CETTE REQUÊTE\n\n${sections.join('\n\n---\n\n')}\n\n# FIN DU CONTEXTE DOCUMENTAIRE\n`;
+            return '\n\n# CONTEXTE DOCUMENTAIRE SÉLECTIONNÉ\n\n' + sections.join('\n\n---\n\n') + '\n\nRègle de citation: cite exactement les libellés SOURCE fournis. N’invente jamais une page, slide, feuille ou ligne absente.\n\n# FIN DU CONTEXTE DOCUMENTAIRE\n';
         },
+
+        async initializeP1Queue() {
+            if (this.p1Queue) return;
+            this.p1Queue = new window.SealarcaP1.PersistentJobQueue({
+                db: window.sealarcaDb,
+                api: window.sealarcaApi,
+                concurrency: 2,
+                getCredentials: () => ({ apiKey: this.apiKey, model: this.selectedModel }),
+                onChange: () => this.refreshFolderWorkspace()
+            });
+            await this.p1Queue.start();
+        },
+
+        async loadDocumentProfiles() {
+            this.documentProfiles = this.activeFolderId ? await window.sealarcaDb.getDocumentProfiles(this.activeFolderId) : [];
+        },
+
+        async loadProcessingJobs() {
+            const app = this;
+            const jobs = this.activeFolderId ? await window.sealarcaDb.getProcessingJobs(this.activeFolderId) : [];
+            this.processingJobs = jobs.map(job => {
+                const document = app.documents.find(item => item.id === job.documentId);
+                const decorated = {
+                    ...job,
+                    documentName: document?.name || job.documentId,
+                    get statusLabel() { return ({ pending: 'En attente', running: 'En cours', completed: 'Terminée', failed: 'Échec', cancelled: 'Annulée' })[job.status] || job.status; },
+                    get checkpointStage() { return job.checkpoint?.stage || ''; },
+                    get canCancel() { return ['pending', 'running'].includes(job.status); },
+                    get canRetry() { return ['failed', 'cancelled'].includes(job.status); },
+                    cancel() { app.cancelProcessingJob(job.id); },
+                    retry() { app.retryProcessingJob(job.id); }
+                };
+                return decorated;
+            });
+        },
+
+        async refreshFolderWorkspace() {
+            if (!this.activeFolderId) return;
+            await Promise.all([this.loadDocuments(), this.loadDocumentProfiles(), this.loadProcessingJobs()]);
+            this.buildFolderOverview();
+            if (this.documentSearchQuery.trim()) this.runDocumentSearch();
+        },
+
+        buildFolderOverview() {
+            const profileByDocument = new Map(this.documentProfiles.map(profile => [profile.documentId, profile]));
+            const validProfiles = this.documents.map(document => profileByDocument.get(document.id)).filter(profile => profile?.status === 'valid');
+            const unique = values => [...new Set(values.filter(Boolean).map(value => String(value).trim()))].slice(0, 100);
+            const dates = [];
+            const items = [];
+            for (const profile of validProfiles) {
+                const document = this.documents.find(item => item.id === profile.documentId);
+                for (const item of profile.importantDates || []) dates.push({ ...item, id: profile.documentId + '_' + (item.date || item.label), documentId: profile.documentId, documentName: document?.name || '', referenceLabel: item.references?.[0]?.label || document?.name || '', open: () => this.openProfileReference(profile.documentId, item.references?.[0]?.sourceId || null) });
+                for (const item of profile.importantItems || []) items.push({ ...item, id: profile.documentId + '_' + (item.label || item.details), documentId: profile.documentId, documentName: document?.name || '', referenceLabel: item.references?.[0]?.label || document?.name || '', open: () => this.openProfileReference(profile.documentId, item.references?.[0]?.sourceId || null) });
+            }
+            this.folderOverview = {
+                documentCount: this.documents.length,
+                pageCount: this.documents.reduce((sum, document) => sum + (Number(document.metadata?.pageCount) || 0), 0),
+                profileCount: validProfiles.length,
+                people: unique(validProfiles.flatMap(profile => profile.people || [])),
+                organizations: unique(validProfiles.flatMap(profile => profile.organizations || [])),
+                dates: dates.slice(0, 50),
+                items: items.slice(0, 50)
+            };
+        },
+
+        async queueDocumentProfile(documentId) {
+            await this.initializeP1Queue();
+            const document = await window.sealarcaDb.getDocument(documentId);
+            if (!document) return;
+            const result = await this.p1Queue.enqueueDocument(document);
+            this.showToast(result.skipped ? 'Fiche déjà à jour.' : 'Fiche ajoutée à la queue.');
+            await this.refreshFolderWorkspace();
+        },
+
+        async queueAllDocumentProfiles() {
+            await this.initializeP1Queue();
+            const results = await this.p1Queue.enqueueDocuments(this.documents);
+            const queued = results.filter(result => !result.skipped).length;
+            this.showToast(queued ? queued + ' fiche(s) ajoutée(s) à la queue.' : 'Toutes les fiches sont déjà à jour.');
+            await this.refreshFolderWorkspace();
+        },
+
+        async cancelProcessingJob(jobId) { await this.p1Queue?.cancel(jobId); },
+        async retryProcessingJob(jobId) { await this.p1Queue?.retry(jobId); },
+
+        updateDocumentSearch(event) {
+            this.documentSearchQuery = event.currentTarget.value;
+            this.runDocumentSearch();
+        },
+
+        runDocumentSearch() {
+            const app = this;
+            const rawResults = window.SealarcaP1.localSearch(this.documents, this.documentSearchQuery, { maxResults: 30, perDocument: 3 });
+            this.documentSearchResults = rawResults.map(result => ({ ...result, matchedTermsLabel: result.matchedTerms.join(', '), open() { app.openProfileReference(result.documentId, result.sourceId); } }));
+        },
+
+        async openProfileReference(documentId, sourceId = null) {
+            await this.openDocumentPreview(documentId);
+            if (!this.previewDocument || !sourceId) return;
+            this.$nextTick(() => {
+                const source = this.previewDocument.sourceMap?.find(item => item.id === sourceId);
+                const preview = document.getElementById('document-preview-markdown');
+                if (source && preview) preview.scrollTop = Math.max(0, Number(source.markdownStart || 0) / Math.max(1, this.previewDocument.markdown.length) * preview.scrollHeight - 80);
+            });
+        },
+
+        exportFolderOverviewMarkdown() {
+            const folder = this.activeFolder;
+            const lines = ['# ' + (folder?.name || 'Dossier'), '', this.folderOverview.documentCount + ' documents', this.folderOverviewPagesLabel, '', '## Documents', ''];
+            this.documents.forEach((document, index) => lines.push('- DOC-' + String(index + 1).padStart(3, '0') + ' — ' + document.name + (document.metadata?.pageCount ? ' — ' + document.metadata.pageCount + ' pages' : '')));
+            lines.push('', '## Fiches disponibles', '', this.folderOverviewProfilesLabel, '', '## Dates principales', '');
+            this.folderOverview.dates.forEach(item => lines.push('- ' + [item.date, item.label].filter(Boolean).join(' — ')));
+            lines.push('', '## Personnes / organisations', '');
+            [...this.folderOverview.people, ...this.folderOverview.organizations].forEach(item => lines.push('- ' + item));
+            lines.push('', '## Éléments importants', '');
+            this.folderOverview.items.forEach(item => lines.push('- ' + (item.label || item.details) + (item.references?.[0]?.label ? ' — ' + item.references[0].label : '')));
+            const blob = new Blob([lines.join('\n') + '\n'], { type: 'text/markdown;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'index.md';
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        },
+
 
         // --- Gestion des Conversations ---
         async loadConversations() {
@@ -598,6 +772,8 @@ document.addEventListener('alpine:init', () => {
                 get hasAttachments() { return Boolean((message.documentRefs && message.documentRefs.length) || (message.attachments && message.attachments.length)); },
                 get visibleAttachments() { return (message.documentRefs || message.attachments || []).map((attachment, index) => ({ ...attachment, attachmentKey: attachment.id || attachment.name || ('attachment_' + index) })); },
                 get hasReasoning() { return Boolean(message.reasoning); },
+                get hasCitations() { return Array.isArray(message.citations) && message.citations.length > 0; },
+                get visibleCitations() { return (message.citations || []).map(citation => ({ ...citation, open() { app.openProfileReference(citation.documentId, citation.sourceId); } })); },
                 get reasoningLabel() { return app.t(decorated._showReasoning ? 'reasoning.hide' : 'reasoning.show'); },
                 get reasoningVisible() { return decorated._showReasoning !== false; },
                 get renderedContent() { return app.renderMarkdown(message.content); },
@@ -701,7 +877,15 @@ document.addEventListener('alpine:init', () => {
             }
 
             // 2. Conserver uniquement les références documentaires dans le message.
-            const selectedDocuments = await window.sealarcaDb.getDocumentsByIds(this.selectedDocumentIds);
+            const folderDocuments = await window.sealarcaDb.getDocuments(this.activeFolderId);
+            const automaticSelection = this.contextMode === 'automatic'
+                ? window.SealarcaP1.selectRelevantDocuments(folderDocuments, text, { limit: 5 })
+                : [];
+            const requestedIds = this.contextMode === 'automatic'
+                ? automaticSelection.map(item => item.document.id)
+                : this.selectedDocumentIds;
+            const selectedDocuments = (await window.sealarcaDb.getDocumentsByIds(requestedIds))
+                .filter(document => document.folderId === this.activeFolderId);
             const documentRefs = selectedDocuments.map(document => ({
                 id: document.id,
                 name: document.name,
@@ -716,6 +900,12 @@ document.addEventListener('alpine:init', () => {
                 role: 'user',
                 content: text || (selectedDocuments[0] ? `[${selectedDocuments[0].name}]` : '...'),
                 documentRefs,
+                contextSelection: {
+                    mode: this.contextMode === 'automatic' ? 'automatic' : 'manual',
+                    scope: 'folder',
+                    folderId: this.activeFolderId,
+                    documentIds: documentRefs.map(document => document.id)
+                },
                 createdAt: Date.now()
             };
 
@@ -736,7 +926,7 @@ document.addEventListener('alpine:init', () => {
             const apiMessages = this.buildConversationHistory();
             const currentUserMessage = apiMessages[apiMessages.length - 1];
             if (currentUserMessage && currentUserMessage.role === 'user' && selectedDocuments.length > 0) {
-                currentUserMessage.content += this.buildDocumentContext(selectedDocuments);
+                currentUserMessage.content += this.buildDocumentContext(selectedDocuments, text, this.contextMode);
             }
 
             const systemPrompt = this.selectedRole ? this.selectedRole.systemPrompt : null;
@@ -767,6 +957,7 @@ document.addEventListener('alpine:init', () => {
                             reasoning: finalReasoning || null,
                             model: this.selectedModel,
                             interrupted: Boolean(metadata.interrupted),
+                            citations: window.SealarcaP1.extractCitations(finalText, selectedDocuments),
                             createdAt: Date.now()
                         };
                         await window.sealarcaDb.saveMessage(assistantMsg);

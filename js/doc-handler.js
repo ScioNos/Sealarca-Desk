@@ -39,15 +39,8 @@ class SealarcaDocHandler {
             default: parsed = await this._parseText(file, extension); break;
         }
 
-        const markdown = this._normalizeMarkdown(parsed.markdown);
+        const { markdown, sourceMap } = this._normalizeParsedDocument(parsed);
         if (!markdown) throw new Error('Aucun texte exploitable trouvé dans ce fichier.');
-        const sourceMap = (parsed.sourceMap || []).map((entry, index, entries) => ({
-            ...entry,
-            markdownStart: Math.min(Math.max(0, entry.markdownStart || 0), markdown.length),
-            markdownEnd: index === entries.length - 1
-                ? markdown.length
-                : Math.min(Math.max(entry.markdownStart || 0, entry.markdownEnd || 0), markdown.length)
-        }));
         if (markdown.length > this.limits.maxExtractedCharacters) {
             throw new Error('Le document extrait dépasse la limite de 500 000 caractères.');
         }
@@ -63,7 +56,9 @@ class SealarcaDocHandler {
             size: file.size,
             hash,
             hashAlgorithm: hash ? 'SHA-256' : null,
+            canonicalFormat: 'markdown',
             markdown,
+            sourceMapVersion: 1,
             sourceMap,
             sourceFile: file.slice(0, file.size, file.type || this._mimeFor(extension)),
             source: {
@@ -94,7 +89,33 @@ class SealarcaDocHandler {
     }
 
     _normalizeMarkdown(value) {
-        return String(value || '').replace(/\r\n?/g, '\n').replace(/[ \t]+$/gm, '').replace(/\n{4,}/g, '\n\n\n').trim() + '\n';
+        const normalized = String(value || '')
+            .replace(/\r\n?/g, '\n')
+            .replace(/[ \t]+$/gm, '')
+            .replace(/\n{4,}/g, '\n\n\n')
+            .trim();
+        return normalized ? normalized + '\n' : '';
+    }
+
+    _normalizeParsedDocument(parsed) {
+        const rawMarkdown = String(parsed?.markdown || '');
+        const markdown = this._normalizeMarkdown(rawMarkdown);
+        let searchFrom = 0;
+        const sourceMap = (parsed?.sourceMap || []).map(entry => {
+            const rawStart = Math.max(0, Number(entry.markdownStart) || 0);
+            const rawEnd = Math.max(rawStart, Number(entry.markdownEnd) || rawStart);
+            const sourceMarkdown = entry._sourceMarkdown || rawMarkdown.slice(rawStart, rawEnd);
+            const normalizedSource = this._normalizeMarkdown(sourceMarkdown).trimEnd();
+            let markdownStart = normalizedSource ? markdown.indexOf(normalizedSource, searchFrom) : -1;
+            if (markdownStart < 0) markdownStart = Math.min(rawStart, markdown.length);
+            const markdownEnd = normalizedSource
+                ? Math.min(markdownStart + normalizedSource.length, markdown.length)
+                : Math.min(Math.max(markdownStart, rawEnd), markdown.length);
+            searchFrom = Math.max(searchFrom, markdownEnd);
+            const { _sourceMarkdown, ...publicEntry } = entry;
+            return { ...publicEntry, markdownStart, markdownEnd };
+        });
+        return { markdown, sourceMap };
     }
 
     _appendSection(target, markdown, locator, label, extra = {}) {
@@ -109,6 +130,7 @@ class SealarcaDocHandler {
             markdownEnd: target.markdown.length,
             label,
             locator,
+            _sourceMarkdown: clean,
             ...extra
         });
     }

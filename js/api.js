@@ -4,6 +4,7 @@
 
 const DEFAULT_SEALARCA_BASE_URL = 'https://sealarca.ch/v1';
 const REQUEST_TIMEOUT_MS = 120000;
+const DEFAULT_RETRY_LIMIT = 3;
 
 class SealarcaAPI {
     constructor() {
@@ -13,13 +14,13 @@ class SealarcaAPI {
 
     async fetchModels(apiKey) {
         const key = this._requireApiKey(apiKey);
-        const response = await fetch(`${DEFAULT_SEALARCA_BASE_URL}/models`, {
+        const response = await this._requestWithRetry(DEFAULT_SEALARCA_BASE_URL + '/models', {
             method: 'GET',
             headers: {
                 Authorization: `Bearer ${key}`,
                 Accept: 'application/json'
             }
-        });
+        }, { context: 'modèles', maxRetries: DEFAULT_RETRY_LIMIT });
 
         if (!response.ok) throw await this._createHttpError(response, 'modèles');
 
@@ -110,7 +111,7 @@ class SealarcaAPI {
             };
             if (instructions?.trim()) payload.instructions = instructions.trim();
 
-            const response = await fetch(`${DEFAULT_SEALARCA_BASE_URL}/responses`, {
+            const response = await this._requestWithRetry(DEFAULT_SEALARCA_BASE_URL + '/responses', {
                 method: 'POST',
                 headers: {
                     Authorization: `Bearer ${key}`,
@@ -119,7 +120,7 @@ class SealarcaAPI {
                 },
                 body: JSON.stringify(payload),
                 signal: this.currentAbortController.signal
-            });
+            }, { context: 'réponse', maxRetries: DEFAULT_RETRY_LIMIT });
 
             if (!response.ok) throw await this._createHttpError(response, 'réponse');
             if (!response.body) throw new Error('Le serveur n’a renvoyé aucun flux.');
@@ -200,11 +201,88 @@ class SealarcaAPI {
         }
     }
 
-    // Alias temporaire pour les anciennes intégrations locales.
-    streamChat(options) {
-        return this.streamResponse({
-            ...options,
-            instructions: options.instructions || options.systemPrompt || null
+    async completeResponse({ apiKey, model, messages, instructions = null, signal = null, maxRetries = DEFAULT_RETRY_LIMIT }) {
+        const key = this._requireApiKey(apiKey);
+        if (!model) throw new Error('Aucun modèle sélectionné.');
+        const controller = new AbortController();
+        let timedOut = false;
+        const abortFromCaller = () => controller.abort();
+        if (signal) {
+            if (signal.aborted) controller.abort();
+            else signal.addEventListener('abort', abortFromCaller, { once: true });
+        }
+        const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, REQUEST_TIMEOUT_MS);
+        try {
+            const input = [];
+            for (const message of messages || []) {
+                if (!message || !['user', 'assistant', 'developer', 'system'].includes(message.role)) continue;
+                if (typeof message.content !== 'string' || !message.content) continue;
+                input.push({ role: message.role, content: message.content });
+            }
+            const payload = { model, input, stream: false, store: false };
+            if (instructions?.trim()) payload.instructions = instructions.trim();
+            const response = await this._requestWithRetry(DEFAULT_SEALARCA_BASE_URL + '/responses', {
+                method: 'POST',
+                headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json', Accept: 'application/json' },
+                body: JSON.stringify(payload),
+                signal: controller.signal
+            }, { context: 'réponse', maxRetries });
+            const data = await response.json().catch(() => { throw new Error('La réponse API JSON est invalide.'); });
+            const text = this._extractResponseText(data);
+            if (!text) throw new Error('La réponse API ne contient aucun texte exploitable.');
+            return { text, response: data };
+        } catch (error) {
+            if (timedOut && error.name === 'AbortError') {
+                const timeoutError = new Error('La requête API a dépassé le délai autorisé.');
+                timeoutError.retryable = true;
+                timeoutError.status = 408;
+                throw timeoutError;
+            }
+            throw error;
+        } finally {
+            clearTimeout(timeoutId);
+            if (signal) signal.removeEventListener('abort', abortFromCaller);
+        }
+    }
+
+    _extractResponseText(data) {
+        if (typeof data?.output_text === 'string') return data.output_text;
+        const parts = [];
+        for (const item of data?.output || []) {
+            for (const content of item?.content || []) if (typeof content?.text === 'string') parts.push(content.text);
+        }
+        return parts.join('');
+    }
+
+    async _requestWithRetry(url, options, { context = 'requête', maxRetries = DEFAULT_RETRY_LIMIT } = {}) {
+        let attempt = 0;
+        while (true) {
+            try {
+                const response = await fetch(url, options);
+                if (response.ok) return response;
+                const error = await this._createHttpError(response, context);
+                if (!error.retryable || attempt >= maxRetries) throw error;
+                await this._delay(error.retryAfterMs || this._backoffDelay(attempt + 1), options.signal);
+                attempt += 1;
+            } catch (error) {
+                if (error.name === 'AbortError') throw error;
+                const retryable = error.retryable === true || /network|fetch|timeout|réseau|connexion/i.test(String(error.message || ''));
+                if (!retryable || attempt >= maxRetries) throw error;
+                await this._delay(error.retryAfterMs || this._backoffDelay(attempt + 1), options.signal);
+                attempt += 1;
+            }
+        }
+    }
+
+    _backoffDelay(attempt) {
+        return Math.min(1000 * Math.pow(2, Math.max(0, attempt - 1)), 30000);
+    }
+
+    _delay(milliseconds, signal) {
+        return new Promise((resolve, reject) => {
+            if (signal?.aborted) { reject(new DOMException('Aborted', 'AbortError')); return; }
+            const timeout = setTimeout(resolve, Math.max(0, Number(milliseconds) || 0));
+            signal?.addEventListener('abort', () => { clearTimeout(timeout); reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
         });
     }
 
@@ -223,16 +301,28 @@ class SealarcaAPI {
     }
 
     async _createHttpError(response, context) {
-        if (response.status === 401) return new Error('Clé API Sealarca invalide ou expirée.');
-        if (response.status === 403) return new Error('Accès refusé pour cette clé API.');
-        if (response.status === 429) return new Error('Trop de requêtes. Veuillez réessayer dans quelques instants.');
-        const text = await response.text().catch(() => '');
-        let detail = text;
-        try {
-            const data = JSON.parse(text);
-            detail = data?.error?.message || data?.message || text;
-        } catch { /* réponse non JSON */ }
-        return new Error(`Erreur API lors de la ${context} (${response.status})${detail ? ` : ${detail.slice(0, 500)}` : ''}`);
+        let message;
+        if (response.status === 401) message = 'Clé API Sealarca invalide ou expirée.';
+        else if (response.status === 403) message = 'Accès refusé pour cette clé API.';
+        else if (response.status === 429) message = 'Trop de requêtes. Une nouvelle tentative sera effectuée automatiquement.';
+        else {
+            const text = await response.text().catch(() => '');
+            let detail = text;
+            try {
+                const data = JSON.parse(text);
+                detail = data?.error?.message || data?.message || text;
+            } catch { /* réponse non JSON */ }
+            message = 'Erreur API lors de la ' + context + ' (' + response.status + ')' + (detail ? ' : ' + detail.slice(0, 500) : '');
+        }
+        const error = new Error(message);
+        error.status = response.status;
+        error.retryable = [408, 425, 429, 500, 502, 503, 504].includes(response.status);
+        const retryAfter = response.headers.get('retry-after');
+        if (retryAfter) {
+            const seconds = Number(retryAfter);
+            error.retryAfterMs = Number.isFinite(seconds) ? seconds * 1000 : Math.max(0, Date.parse(retryAfter) - Date.now());
+        }
+        return error;
     }
 
     _formatModelLabel(modelId) {

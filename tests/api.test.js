@@ -105,3 +105,32 @@ test('les erreurs HTTP ne divulguent pas la clé et sont remontées', async () =
     assert.match(received.message, /invalide|expirée/);
     assert.doesNotMatch(received.message, /very-secret/);
 });
+
+
+test('completeResponse utilise le modèle découvert et extrait le texte JSON', async () => {
+    let request;
+    const api = loadApi(async (url, options) => {
+        request = { url, body: JSON.parse(options.body) };
+        return new Response(JSON.stringify({ output: [{ content: [{ type: 'output_text', text: '{"summary":"ok"}' }] }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    const result = await api.completeResponse({ apiKey: 'secret', model: 'modele-dynamique', messages: [{ role: 'user', content: 'Fiche' }] });
+    assert.equal(request.url, 'https://sealarca.ch/v1/responses');
+    assert.equal(request.body.model, 'modele-dynamique');
+    assert.equal(request.body.stream, false);
+    assert.equal(result.text, '{"summary":"ok"}');
+});
+
+test('completeResponse reprend après un HTTP 429 sans dupliquer le payload', async () => {
+    let calls = 0;
+    const bodies = [];
+    const api = loadApi(async (url, options) => {
+        calls += 1;
+        bodies.push(options.body);
+        if (calls === 1) return new Response(JSON.stringify({ error: { message: 'rate limit' } }), { status: 429, headers: { 'retry-after': '0' } });
+        return new Response(JSON.stringify({ output_text: 'ok' }), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    const result = await api.completeResponse({ apiKey: 'secret', model: 'modele-dynamique', messages: [{ role: 'user', content: 'Fiche' }], maxRetries: 1 });
+    assert.equal(calls, 2);
+    assert.equal(bodies[0], bodies[1]);
+    assert.equal(result.text, 'ok');
+});

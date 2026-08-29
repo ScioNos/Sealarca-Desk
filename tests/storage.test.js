@@ -6,21 +6,42 @@ const path = require('node:path');
 const root = path.join(__dirname, '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 
-test('IndexedDB v2 migre les conversations vers un dossier sans supprimer les messages', () => {
+test('IndexedDB v3 préserve P0 et ajoute fiches et checkpoints sans supprimer les données', () => {
     const db = read('js/db.js');
-    assert.match(db, /const DB_VERSION = 2/);
+    assert.match(db, /const DB_VERSION = 3/);
     assert.match(db, /createObjectStore\('folders'/);
     assert.match(db, /createObjectStore\('documents'/);
     assert.match(db, /createObjectStore\('documentChunks'/);
+    assert.match(db, /createObjectStore\('documentProfiles'/);
+    assert.match(db, /createObjectStore\('processingJobs'/);
+    assert.match(db, /recoverInterruptedJobs\(\)/);
+    assert.match(db, /recovered_after_interruption/);
     assert.match(db, /createIndex\('folderId', 'folderId'/);
     assert.match(db, /if \(!conversation\.folderId\)/);
     assert.match(db, /conversation\.folderId = DEFAULT_FOLDER_ID/);
     assert.doesNotMatch(db, /deleteObjectStore/);
 });
 
+
+test('la normalisation Markdown recalcule des offsets sourceMap exacts', () => {
+    const vm = require('node:vm');
+    const context = { window: {}, console };
+    vm.createContext(context);
+    vm.runInContext(read('js/doc-handler.js'), context, { filename: 'doc-handler.js' });
+    const handler = context.window.sealarcaDocHandler;
+    const parsed = { markdown: '# Titre\n\n\n\nSection A   \n\n', sourceMap: [] };
+    handler._appendSection(parsed, 'Section B   \n\nTexte', { type: 'text-line-range', startLine: 4, endLine: 6 }, 'Lignes 4–6');
+    const normalized = handler._normalizeParsedDocument(parsed);
+    const source = normalized.sourceMap[0];
+    assert.equal(normalized.markdown.slice(source.markdownStart, source.markdownEnd), 'Section B\n\nTexte');
+    assert.equal(Object.hasOwn(source, '_sourceMarkdown'), false);
+});
+
 test('les documents persistants gardent Markdown, original, hash et sourceMap', () => {
     const handler = read('js/doc-handler.js');
     const db = read('js/db.js');
+    assert.match(handler, /canonicalFormat: 'markdown'/);
+    assert.match(handler, /sourceMapVersion: 1/);
     assert.match(handler, /markdown,/);
     assert.match(handler, /sourceFile:/);
     assert.match(handler, /hashAlgorithm: hash \? 'SHA-256'/);
@@ -30,6 +51,8 @@ test('les documents persistants gardent Markdown, original, hash et sourceMap', 
     assert.match(handler, /type: 'spreadsheet-range'/);
     assert.match(handler, /sheet: sheetName, range/);
     assert.match(handler, /type: 'text-line-range'/);
+    assert.match(db, /canonicalFormat: 'markdown'/);
+    assert.match(db, /sourceMapVersion/);
     assert.match(db, /chunks: \{ status: 'not_generated', source: 'markdown' \}/);
     assert.match(db, /derivedFrom: 'markdown'/);
 });
@@ -37,8 +60,12 @@ test('les documents persistants gardent Markdown, original, hash et sourceMap', 
 test('le contexte IA sépare historique et documents sélectionnés', () => {
     const app = read('js/app.js');
     assert.match(app, /buildConversationHistory\(\)/);
-    assert.match(app, /getDocumentsByIds\(this\.selectedDocumentIds\)/);
-    assert.match(app, /buildDocumentContext\(selectedDocuments\)/);
+    assert.match(app, /getDocumentsByIds\(requestedIds\)/);
+    assert.match(app, /selectRelevantDocuments\(folderDocuments, text/);
+    assert.match(app, /filter\(document => document\.folderId === this\.activeFolderId\)/);
+    assert.match(app, /contextSelection: \{/);
+    assert.match(app, /mode: this\.contextMode === 'automatic' \? 'automatic' : 'manual'/);
+    assert.match(app, /buildDocumentContext\(selectedDocuments, text, this\.contextMode\)/);
     assert.match(app, /documentRefs/);
     assert.doesNotMatch(app, /m\.fullPayload \|\| m\.content/);
     assert.doesNotMatch(app, /formattedPromptText/);
@@ -51,6 +78,32 @@ test('l’interface expose dossiers, bibliothèque, consultation et sélection',
     assert.match(html, /x-for="doc in documents"/);
     assert.match(html, /x-safe-html="previewMarkdown"/);
     assert.match(html, /x-text="doc\.selectionMark"/);
+});
+
+
+test('P1 persiste fiches, jobs, reprise et export sans remplacer le Markdown canonique', () => {
+    const db = read('js/db.js');
+    const app = read('js/app.js');
+    const html = read('index.html');
+    assert.match(db, /getDocumentProfile\(documentId\)/);
+    assert.match(db, /saveDocumentProfile\(profile\)/);
+    assert.match(db, /enqueueProcessingJob\(job\)/);
+    assert.match(db, /status: 'pending'/);
+    assert.match(db, /\['pending', 'running', 'completed', 'failed', 'cancelled'\]/);
+    assert.match(app, /exportFolderOverviewMarkdown\(\)/);
+    assert.match(app, /link\.download = 'index\.md'/);
+    assert.match(html, /IndexedDB/);
+    assert.doesNotMatch(app, /saveDocument\([^)]*index\.md/);
+});
+
+test('l’interface P1 expose vue dossier, recherche, queue et modes de contexte', () => {
+    const html = read('index.html');
+    assert.match(html, /Vue d’ensemble/);
+    assert.match(html, /Recherche locale/);
+    assert.match(html, /Queue locale/);
+    assert.match(html, /Automatique local/);
+    assert.match(html, /Générer les fiches manquantes/);
+    assert.match(html, /js\/p1\.js\?v=1\.0\.0/);
 });
 
 test('le projet est source available sous PolyForm Perimeter 1.0.1', () => {

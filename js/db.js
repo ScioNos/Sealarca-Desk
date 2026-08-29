@@ -5,7 +5,7 @@
  */
 
 const DB_NAME = 'sealarca_desk_db';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const DEFAULT_FOLDER_ID = 'folder_default';
 
 class SealarcaDB {
@@ -72,6 +72,23 @@ class SealarcaDB {
                     const chunkStore = db.createObjectStore('documentChunks', { keyPath: 'id' });
                     chunkStore.createIndex('documentId', 'documentId', { unique: false });
                     chunkStore.createIndex('folderId', 'folderId', { unique: false });
+                }
+
+                if (!db.objectStoreNames.contains('documentProfiles')) {
+                    const profileStore = db.createObjectStore('documentProfiles', { keyPath: 'documentId' });
+                    profileStore.createIndex('folderId', 'folderId', { unique: false });
+                    profileStore.createIndex('inputFingerprint', 'inputFingerprint', { unique: false });
+                    profileStore.createIndex('status', 'status', { unique: false });
+                    profileStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+                }
+
+                if (!db.objectStoreNames.contains('processingJobs')) {
+                    const jobStore = db.createObjectStore('processingJobs', { keyPath: 'id' });
+                    jobStore.createIndex('folderId', 'folderId', { unique: false });
+                    jobStore.createIndex('documentId', 'documentId', { unique: false });
+                    jobStore.createIndex('status', 'status', { unique: false });
+                    jobStore.createIndex('nextRunAt', 'nextRunAt', { unique: false });
+                    jobStore.createIndex('inputFingerprint', 'inputFingerprint', { unique: false });
                 }
 
                 if (oldVersion < 2) {
@@ -253,7 +270,7 @@ Ton rôle est de synthétiser des dossiers volumineux en notes de synthèse conc
         const conversations = await this.getConversations(id);
         const documents = await this.getDocuments(id);
         return new Promise((resolve, reject) => {
-            const tx = this.db.transaction(['folders', 'conversations', 'messages', 'documents', 'documentChunks'], 'readwrite');
+            const tx = this.db.transaction(['folders', 'conversations', 'messages', 'documents', 'documentChunks', 'documentProfiles', 'processingJobs'], 'readwrite');
             tx.objectStore('folders').delete(id);
             const convStore = tx.objectStore('conversations');
             const msgIndex = tx.objectStore('messages').index('conversationId');
@@ -267,8 +284,16 @@ Ton rôle est de synthétiser des dossiers volumineux en notes de synthèse conc
             });
             const docStore = tx.objectStore('documents');
             const chunkIndex = tx.objectStore('documentChunks').index('documentId');
+            const profileStore = tx.objectStore('documentProfiles');
+            const jobIndex = tx.objectStore('processingJobs').index('documentId');
             documents.forEach(document => {
                 docStore.delete(document.id);
+                profileStore.delete(document.id);
+                const jobReq = jobIndex.openCursor(IDBKeyRange.only(document.id));
+                jobReq.onsuccess = event => {
+                    const cursor = event.target.result;
+                    if (cursor) { cursor.delete(); cursor.continue(); }
+                };
                 const req = chunkIndex.openCursor(IDBKeyRange.only(document.id));
                 req.onsuccess = event => {
                     const cursor = event.target.result;
@@ -367,7 +392,9 @@ Ton rôle est de synthétiser des dossiers volumineux en notes de synthèse conc
         const value = {
             ...document,
             folderId: document.folderId || DEFAULT_FOLDER_ID,
+            canonicalFormat: 'markdown',
             markdown: String(document.markdown || ''),
+            sourceMapVersion: Number.isInteger(document.sourceMapVersion) ? document.sourceMapVersion : 1,
             sourceMap: Array.isArray(document.sourceMap) ? document.sourceMap : [],
             metadata: document.metadata && typeof document.metadata === 'object' ? document.metadata : {},
             derivations: document.derivations && typeof document.derivations === 'object'
@@ -383,8 +410,14 @@ Ton rôle est de synthétiser des dossiers volumineux en notes de synthèse conc
     async deleteDocument(id) {
         await this.init();
         return new Promise((resolve, reject) => {
-            const tx = this.db.transaction(['documents', 'documentChunks'], 'readwrite');
+            const tx = this.db.transaction(['documents', 'documentChunks', 'documentProfiles', 'processingJobs'], 'readwrite');
             tx.objectStore('documents').delete(id);
+            tx.objectStore('documentProfiles').delete(id);
+            const jobReq = tx.objectStore('processingJobs').index('documentId').openCursor(IDBKeyRange.only(id));
+            jobReq.onsuccess = event => {
+                const cursor = event.target.result;
+                if (cursor) { cursor.delete(); cursor.continue(); }
+            };
             const req = tx.objectStore('documentChunks').index('documentId').openCursor(IDBKeyRange.only(id));
             req.onsuccess = event => {
                 const cursor = event.target.result;
@@ -433,6 +466,120 @@ Ton rôle est de synthétiser des dossiers volumineux en notes de synthèse conc
         });
     }
 
+
+    async getDocumentProfile(documentId) {
+        await this.init();
+        return (await this._request('documentProfiles', 'readonly', store => store.get(documentId))) || null;
+    }
+
+    async getDocumentProfiles(folderId = null) {
+        await this.init();
+        const profiles = folderId
+            ? await this._request('documentProfiles', 'readonly', store => store.index('folderId').getAll(folderId))
+            : await this._getAllDirect('documentProfiles');
+        return profiles.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    }
+
+    async saveDocumentProfile(profile) {
+        await this.init();
+        if (!profile?.documentId) throw new Error('Une fiche doit être liée à un document.');
+        const now = Date.now();
+        const value = {
+            ...profile,
+            status: profile.status || 'valid',
+            schemaVersion: Number(profile.schemaVersion) || 1,
+            people: Array.isArray(profile.people) ? profile.people : [],
+            organizations: Array.isArray(profile.organizations) ? profile.organizations : [],
+            importantDates: Array.isArray(profile.importantDates) ? profile.importantDates : [],
+            importantItems: Array.isArray(profile.importantItems) ? profile.importantItems : [],
+            createdAt: profile.createdAt || now,
+            updatedAt: now
+        };
+        await this._request('documentProfiles', 'readwrite', store => store.put(value));
+        return value;
+    }
+
+    async deleteDocumentProfile(documentId) {
+        await this.init();
+        await this._request('documentProfiles', 'readwrite', store => store.delete(documentId));
+        return true;
+    }
+
+    async getProcessingJob(id) {
+        await this.init();
+        return (await this._request('processingJobs', 'readonly', store => store.get(id))) || null;
+    }
+
+    async getProcessingJobs(folderId = null) {
+        await this.init();
+        const jobs = folderId
+            ? await this._request('processingJobs', 'readonly', store => store.index('folderId').getAll(folderId))
+            : await this._getAllDirect('processingJobs');
+        return jobs.sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+    }
+
+    async saveProcessingJob(job) {
+        await this.init();
+        if (!job?.id) throw new Error('Identifiant de job manquant.');
+        const now = Date.now();
+        const value = {
+            ...job,
+            status: ['pending', 'running', 'completed', 'failed', 'cancelled'].includes(job.status) ? job.status : 'pending',
+            attempts: Number(job.attempts) || 0,
+            maxAttempts: Math.max(1, Number(job.maxAttempts) || 5),
+            createdAt: job.createdAt || now,
+            updatedAt: now
+        };
+        await this._request('processingJobs', 'readwrite', store => store.put(value));
+        return value;
+    }
+
+    async enqueueProcessingJob(job) {
+        await this.init();
+        const existing = (await this._request('processingJobs', 'readonly', store => store.index('documentId').getAll(job.documentId)))
+            .find(item => item.type === job.type && item.inputFingerprint === job.inputFingerprint && ['pending', 'running'].includes(item.status));
+        if (existing) return existing;
+        const now = Date.now();
+        return this.saveProcessingJob({
+            ...job,
+            id: job.id || 'job_' + now + '_' + Math.random().toString(36).slice(2, 9),
+            status: 'pending',
+            attempts: 0,
+            nextRunAt: now,
+            checkpoint: { stage: 'queued', at: now },
+            createdAt: now
+        });
+    }
+
+    async getRunnableProcessingJobs(now = Date.now(), limit = 2) {
+        await this.init();
+        const pending = await this._request('processingJobs', 'readonly', store => store.index('status').getAll('pending'));
+        return pending
+            .filter(job => !job.nextRunAt || job.nextRunAt <= now)
+            .sort((a, b) => (a.nextRunAt || 0) - (b.nextRunAt || 0) || (a.createdAt || 0) - (b.createdAt || 0))
+            .slice(0, Math.max(1, Number(limit) || 1));
+    }
+
+    async recoverInterruptedJobs() {
+        await this.init();
+        const running = await this._request('processingJobs', 'readonly', store => store.index('status').getAll('running'));
+        for (const job of running) {
+            await this.saveProcessingJob({
+                ...job,
+                status: 'pending',
+                nextRunAt: Date.now(),
+                checkpoint: { stage: 'recovered_after_interruption', previous: job.checkpoint || null, at: Date.now() }
+            });
+        }
+        return running.length;
+    }
+
+    async deleteProcessingJob(id) {
+        await this.init();
+        await this._request('processingJobs', 'readwrite', store => store.delete(id));
+        return true;
+    }
+
     async getRoles() {
         await this.init();
         return this._getAllDirect('roles');
@@ -456,10 +603,12 @@ Ton rôle est de synthétiser des dossiers volumineux en notes de synthèse conc
         const messages = {};
         for (const conversation of conversations) messages[conversation.id] = await this.getMessages(conversation.id);
         return {
-            version: '2.0',
+            version: '3.0',
             exportedAt: new Date().toISOString(),
             folders: await this.getFolders(),
             documents: await this.getDocuments(),
+            documentProfiles: await this.getDocumentProfiles(),
+            processingJobs: await this.getProcessingJobs(),
             conversations,
             messages,
             roles: await this.getRoles()
@@ -471,6 +620,8 @@ Ton rôle est de synthétiser des dossiers volumineux en notes de synthèse conc
         await this.init();
         if (Array.isArray(data.folders)) for (const folder of data.folders) await this.saveFolder(folder);
         if (Array.isArray(data.documents)) for (const document of data.documents) await this.saveDocument(document);
+        if (Array.isArray(data.documentProfiles)) for (const profile of data.documentProfiles) await this.saveDocumentProfile(profile);
+        if (Array.isArray(data.processingJobs)) for (const job of data.processingJobs) await this.saveProcessingJob(job);
         for (const conversation of data.conversations) {
             await this.saveConversation({ ...conversation, folderId: conversation.folderId || DEFAULT_FOLDER_ID });
             const messages = data.messages && data.messages[conversation.id];
