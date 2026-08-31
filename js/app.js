@@ -92,6 +92,9 @@ document.addEventListener('alpine:init', () => {
         get appApiKey() { return this.t('app.apiKey'); },
         get appEdit() { return this.t('app.edit'); },
         get appClose() { return this.t('app.close'); },
+        get modelPickerHint() { return this.t('app.modelHint'); },
+        get roleButtonHint() { return this.t('app.roleHint'); },
+        get roleButtonTitle() { return `${this.appRoles} — ${this.t('app.roleHint')}`; },
         get appRoles() { return this.t('app.roles'); },
         get appVaultStatus() { return this.t('app.vaultStatus'); },
         get appConnecting() { return this.t('app.connecting'); },
@@ -129,6 +132,7 @@ document.addEventListener('alpine:init', () => {
         get settingsApiKeyLabel() { return this.t('settings.apiKeyLabel'); },
         get settingsApiKeyHint() { return this.t('settings.apiKeyHint'); },
         get settingsModelsTitle() { return this.t('settings.modelsTitle'); },
+        get settingsModelsHint() { return this.t('settings.modelsHint'); },
         get settingsTestLabel() { return this.t(this.isLoadingModels ? 'settings.syncing' : 'settings.testBtn'); },
         get settingsSaveLabel() { return this.t('settings.saveBtn'); },
         get settingsForgetLabel() { return this.t('settings.forgetBtn'); },
@@ -450,7 +454,7 @@ document.addEventListener('alpine:init', () => {
             // Adapter les libellés des rôles selon la langue active
             this.roles = rawRoles.map(r => {
                 const roleKey = r.id.replace('role-', '');
-                const localized = window.SEALARCA_I18N?.[this.currentLang]?.roles?.[roleKey];
+                const localized = r.kind === 'custom' ? null : window.SEALARCA_I18N?.[this.currentLang]?.roles?.[roleKey];
                 if (localized) {
                     const decoratedRole = {
                         ...r,
@@ -482,9 +486,27 @@ document.addEventListener('alpine:init', () => {
 
             if (this.selectedRole) {
                 const updated = this.roles.find(r => r.id === this.selectedRole.id);
-                if (updated) this.selectedRole = updated;
-            } else if (this.roles.length > 0) {
-                this.selectedRole = this.roles[0];
+                if (updated) {
+                    this.selectedRole = updated;
+                    await this.persistSelectedRole(updated);
+                }
+            } else {
+                this.selectedRole = this.roles.find(role => role.id === window.SEALARCA_DEFAULT_ROLE_ID) || null;
+            }
+        },
+
+        async persistSelectedRole(role) {
+            if (!role) return;
+            try {
+                await window.sealarcaDb.setSetting('sealarca_active_role', {
+                    id: role.id,
+                    name: role.name,
+                    icon: role.icon,
+                    description: role.description,
+                    systemPrompt: role.systemPrompt
+                });
+            } catch (error) {
+                console.error('Sauvegarde du mode impossible:', error);
             }
         },
 
@@ -959,13 +981,7 @@ document.addEventListener('alpine:init', () => {
         // --- Sélection d'un Rôle Métier ---
         selectRole(role) {
             this.selectedRole = role;
-            window.sealarcaDb.setSetting('sealarca_active_role', {
-                id: role.id,
-                name: role.name,
-                icon: role.icon,
-                description: role.description,
-                systemPrompt: role.systemPrompt
-            }).catch(error => console.error('Sauvegarde du rôle impossible:', error));
+            this.persistSelectedRole(role);
             this.isRolesOpen = false;
             this.showToast(`${this.t('input.roleLabel')} : ${role.name}`);
         },

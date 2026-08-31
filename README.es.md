@@ -6,7 +6,7 @@
 *Preparación local de documentos, selección explícita del contexto y acceso directo al Vault.*
 
 [![Licencia: PolyForm Perimeter 1.0.1](https://img.shields.io/badge/Licencia-PolyForm%20Perimeter%201.0.1-087F68.svg)](LICENSE)
-[![Versión: v1.0.1](https://img.shields.io/badge/Versión-v1.0.1-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.0.1)
+[![Versión: v1.0.2](https://img.shields.io/badge/Versión-v1.0.2-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.0.2)
 
 🌐 **Language / Langue / Sprache / Lingua / Idioma**  
 [English 🇬🇧](README.md) · [Français 🇫🇷](README.fr.md) · [Deutsch 🇩🇪](README.de.md) · [Italiano 🇮🇹](README.it.md) · **Español**
@@ -32,7 +32,7 @@ El programa no utiliza un backend de aplicación intermedio, SDK de analítica n
 - **Perfiles documentales generados por IA** (resumen, personas, organizaciones, fechas y elementos importantes), procesados mediante una cola persistente de dos workers con reintentos, cancelación, deduplicación y recuperación tras una interrupción. La generación envía el Markdown del documento al modelo Sealarca elegido.
 - **Integración con Responses API**: descubrimiento dinámico mediante `GET /v1/models`; solicitudes con y sin streaming mediante `POST /v1/responses`, con `store: false`, timeout, backoff HTTP y cancelación.
 - **Salida en streaming** con panel de razonamiento cuando la pasarela emite eventos de resumen de razonamiento compatibles.
-- **Cuatro roles integrados**: Derecho y contratos, Experto fiscal y fiduciario, Cumplimiento y secreto profesional, Resumen ejecutivo y redacción.
+- **Cinco modos de trabajo**: Análisis documental, Síntesis y redacción, Jurídico y contratos, Fiscal y fiduciario, Cumplimiento y confidencialidad.
 - **Cinco idiomas de interfaz**: francés, alemán, italiano, inglés y español.
 - **Temas claro/oscuro**, CSP estricta, renderizado Markdown saneado y dependencias locales.
 
@@ -64,7 +64,7 @@ Sealarca-Desk/
 ├── js/
 │   ├── boot-theme.js          # Aplica el tema antes del renderizado
 │   ├── i18n.js                # Diccionarios para cinco idiomas
-│   ├── db.js                  # Esquema IndexedDB v3 y persistencia
+│   ├── db.js                  # Esquema IndexedDB v4 y persistencia
 │   ├── doc-handler.js         # Extracción local, Markdown y procedencia
 │   ├── api.js                 # Cliente fijo de Sealarca Responses API
 │   ├── p1.js                  # Búsqueda, perfiles, citas y cola persistente

@@ -82,7 +82,8 @@ test('les nouvelles chaînes de configuration et d’espace documentaire existen
     vm.createContext(context);
     vm.runInContext(read('js/i18n.js'), context, { filename: 'i18n.js' });
     const required = {
-        settings: ['getKey', 'chooseModel', 'modelRequired', 'closeBtn', 'networkError'],
+        app: ['modelHint', 'roleHint'],
+        settings: ['getKey', 'chooseModel', 'modelRequired', 'modelsHint', 'closeBtn', 'networkError'],
         documents: ['workspaceSubtitle', 'manualMode', 'automaticMode', 'automaticHint', 'overviewTab', 'queueAction', 'statusPending', 'statusCancelled']
     };
     for (const language of ['fr', 'de', 'it', 'en', 'es']) {
@@ -90,6 +91,16 @@ test('les nouvelles chaînes de configuration et d’espace documentaire existen
             for (const key of required[group]) assert.equal(typeof context.window.SEALARCA_I18N[language][group][key], 'string', `${language}.${group}.${key}`);
         }
     }
+});
+
+test('le premier écran explique le modèle et le rôle sans promesse géographique', () => {
+    const html = read('index.html');
+    const i18n = read('js/i18n.js');
+    assert.match(html, /class="model-picker-group"/);
+    assert.match(html, /x-text="modelPickerHint"/);
+    assert.match(html, /x-text="roleButtonHint"/);
+    assert.match(i18n, /environnement d’exécution protégé et matériellement isolé/);
+    assert.doesNotMatch(i18n, /environnement matériellement isolé et chiffré en Suisse/);
 });
 
 test('les langues utilisent des drapeaux locaux accessibles sans codes visibles', () => {

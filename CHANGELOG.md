@@ -4,6 +4,20 @@ All notable changes to **Sealarca-Desk** are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-08-31
+
+### Fixed
+
+- Add five system work modes with an explicit Document Analysis default, refreshed prompts and non-destructive synchronization of existing system modes.
+- Preserve existing user-selected modes and custom modes while updating only unchanged built-in modes.
+- Rename public role terminology to Work modes and remove professional-qualification wording from the UI and active prompts.
+- Rebuild the distribution including the cumulative `1.0.1` and `1.0.2` first-screen and work-mode corrections.
+
+### Verification
+
+- Expanded the Node.js suite to 41 tests covering API, storage, document, security, first-screen and work-mode contracts.
+- Rebuilt the `Sealarca-Desk-v1.0.2.zip` distribution and its SHA-256 checksum.
+
 ## [1.0.1] - 2026-08-31
 
 ### Fixed
@@ -15,10 +29,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - Align the file picker with all supported parsers, including `.log` and `.xml`, and reject empty or malformed extracted documents.
 - Improve small-screen layout, touch targets, long-name handling and localization of the document workspace.
 - Prevent stale streaming cleanup from affecting a newer request and surface IndexedDB transaction aborts correctly.
+- Add five system work modes with an explicit Document Analysis default, refreshed prompts, and non-destructive synchronization of existing system modes.
 
 ### Verification
 
-- Expanded the Node.js suite to 35 tests covering the corrected UI, storage and document contracts.
+- Expanded the Node.js suite to 40 tests covering the corrected UI, storage, document and work-mode contracts.
 - Rebuilt the `Sealarca-Desk-v1.0.1.zip` distribution and its SHA-256 checksum.
 
 ## [1.0.0] - 2026-08-29

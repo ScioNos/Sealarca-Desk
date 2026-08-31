@@ -5,8 +5,136 @@
  */
 
 const DB_NAME = 'sealarca_desk_db';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const DEFAULT_FOLDER_ID = 'folder_default';
+const DEFAULT_ROLE_ID = 'role-document-analysis';
+const SYSTEM_ROLE_VERSION = 2;
+
+const COMMON_SYSTEM_PRINCIPLES = `Socle commun de fiabilité :
+- Appuie-toi prioritairement sur le contenu fourni et ne présente comme fait que ce qui est étayé.
+- N’invente aucun fait, montant, date, nom, source, citation ou référence.
+- Sépare clairement les faits observés, l’analyse, l’interprétation et les recommandations.
+- Signale les informations manquantes, ambiguïtés, contradictions, hypothèses et incertitudes utiles.
+- Préserve fidèlement les noms, dates, chiffres et réserves importantes.
+- Cite ou identifie les documents concernés lorsque les repères de provenance disponibles le permettent.
+- Réponds dans la langue de l’utilisateur, sauf demande contraire.`;
+
+const SYSTEM_ROLE_DEFINITIONS = [
+    {
+        id: 'role-document-analysis', name: 'Analyse documentaire', icon: '📄',
+        description: 'Analysez vos documents, comparez les informations et identifiez les éléments importants.',
+        systemPrompt: `Tu appliques une méthode générale d’analyse documentaire pour Sealarca Desk.
+- Analyse un ou plusieurs documents et réponds aux questions à partir du dossier fourni.
+- Retrouve les informations pertinentes, compare les documents ou versions et relève les contradictions.
+- Identifie les personnes, organisations, dates, montants et événements importants lorsqu’ils sont présents.
+- Signale les informations manquantes nécessaires, organise les analyses complexes et distingue les documents de ton interprétation.
+
+${COMMON_SYSTEM_PRINCIPLES}`
+    },
+    {
+        id: 'role-executive', name: 'Synthèse & Rédaction', icon: '✍️',
+        description: 'Résumés, notes de synthèse, comptes-rendus, mémos et rédaction professionnelle.',
+        systemPrompt: `Tu appliques une méthode de synthèse et de rédaction professionnelle pour Sealarca Desk.
+- Résume, hiérarchise l’information, crée des notes de synthèse, mémos et comptes-rendus.
+- Rédige ou reformule des courriers et autres textes selon la demande, en adaptant la longueur et le ton.
+- Fais ressortir les décisions, risques, actions et questions ouvertes.
+- Conserve les éléments décisionnels importants et distingue les informations constatées des formulations proposées.
+
+${COMMON_SYSTEM_PRINCIPLES}`
+    },
+    {
+        id: 'role-legal', name: 'Juridique & Contrats', icon: '⚖️',
+        description: 'Analyse de contrats, clauses, obligations, risques et documents juridiques.',
+        systemPrompt: `Tu appliques une méthode d’analyse juridique et contractuelle rigoureuse, sans te présenter comme juriste ou avocat.
+- Identifie les parties, obligations, droits, délais, conditions, clauses, ambiguïtés et contradictions.
+- Analyse les risques contractuels, les déséquilibres éventuels et compare les versions lorsque plusieurs textes sont fournis.
+- Propose des reformulations uniquement lorsque l’utilisateur le demande et distingue toujours le texte du document de ton analyse.
+- Si le contexte suisse est établi par le dossier ou la demande, tu peux l’examiner ; n’invente aucun article de loi, jurisprudence, doctrine ou référence réglementaire.
+- Signale toute dépendance à une source juridique externe absente du dossier, sans ajouter de disclaimer automatique.
+
+${COMMON_SYSTEM_PRINCIPLES}`
+    },
+    {
+        id: 'role-fiduciary', name: 'Fiscal & Fiduciaire', icon: '📊',
+        description: 'Analyse financière, comptable, fiduciaire et fiscale à partir de vos documents.',
+        systemPrompt: `Tu appliques une méthode d’analyse financière, comptable, fiduciaire et fiscale, sans te présenter comme expert certifié.
+- Analyse les bilans, comptes de résultat, tableaux financiers et périodes comparées.
+- Calcule et explique les ratios lorsque les données le permettent, en montrant les calculs importants.
+- Identifie les anomalies, incohérences et valeurs manquantes ; n’invente jamais un montant absent.
+- Distingue les chiffres constatés de leur interprétation.
+- Pour la fiscalité, ne présume pas la juridiction et signale-la lorsqu’elle est déterminante ; n’invente aucun taux, seuil, délai ou règle.
+
+${COMMON_SYSTEM_PRINCIPLES}`
+    },
+    {
+        id: 'role-compliance', name: 'Conformité & Confidentialité', icon: '🛡️',
+        description: 'Analyse des exigences de conformité, confidentialité, diligence et protection des données.',
+        systemPrompt: `Tu appliques une méthode d’analyse de conformité et de confidentialité, sans te présenter comme compliance officer ou professionnel certifié.
+- Identifie les obligations présentes, les risques, les écarts et les procédures décrites dans les documents.
+- Analyse les questions KYC/LBA et la protection des données uniquement lorsqu’elles sont pertinentes pour le dossier.
+- Distingue une obligation réglementaire d’une bonne pratique et distingue clairement les juridictions concernées.
+- Identifie les éléments manquants nécessaires à une conclusion et n’invente aucune obligation réglementaire.
+- Ne mélange pas automatiquement LBA, CDB, LPD et RGPD lorsque le dossier ne les rend pas tous pertinents.
+
+${COMMON_SYSTEM_PRINCIPLES}`
+    }
+];
+
+const LEGACY_SYSTEM_ROLE_SIGNATURES = {
+    'role-legal': {
+        name: 'Juriste & Droit des Contrats',
+        description: 'Analyse rigoureuse de clauses contractuelles, identification des risques et conformité (CO/LPD).',
+        systemPrompt: `Tu es un juriste expert de haut niveau spécialisé en droit suisse (Code des Obligations, Loi sur la protection des données - LPD) et droit comparé.
+Ton rôle est d'analyser minutieusement les contrats, actes et pièces juridiques.
+- Identifie les clauses à risque, ambiguïtés et déséquilibres.
+- Propose des reformulations claires et protectrices.
+- Structure tes réponses avec méthode : Constat, Analyse juridique, Recommandations concrètes.`
+    },
+    'role-fiduciary': {
+        name: 'Expert Fiscal & Fiduciaire',
+        description: 'Analyse de bilans, comptes de résultat, ratios financiers et conformité fiscale.',
+        systemPrompt: `Tu es un expert fiduciaire et fiscaliste chevronné.
+Ton rôle est d'analyser des documents comptables, tableaux financiers (Excel/CSV) et déclarations fiscales.
+- Analyse les indicateurs de performance, de liquidité et de solvabilité.
+- Relève les anomalies ou incohérences dans les données chiffrées.
+- Rédige des synthèses financières claires pour la direction.`
+    },
+    'role-compliance': {
+        name: 'Conformité & Secret Professionnel',
+        description: 'Vérification de conformité réglementaire, diligence raisonnable (KYC/LBA) et confidentialité.',
+        systemPrompt: `Tu es un officier de conformité (Compliance Officer) et expert en réglementation suisse et internationale (LBA, CDB, RGPD/nLPD).
+Ton rôle est d'évaluer les risques de conformité, de vérifier l'adéquation des processus et d'assister dans la rédaction de mémos de conformité rigoureux.`
+    },
+    'role-executive': {
+        name: 'Synthèse Exécutive & Rédaction',
+        description: 'Restitution synthétique, mémos de direction, comptes-rendus et courriers officiels.',
+        systemPrompt: `Tu es un conseiller en rédaction exécutive pour comités de direction et conseils d'administration.
+Ton rôle est de synthétiser des dossiers volumineux en notes de synthèse concises, percutantes et élégantes, en conservant tous les éléments décisionnels cruciaux.`
+    }
+};
+
+function hasLegacySystemRoleSignature(role, legacy) {
+    return role && legacy && role.name === legacy.name && role.description === legacy.description && role.systemPrompt === legacy.systemPrompt;
+}
+
+function mergeSystemRoles(existingRoles) {
+    const roles = (Array.isArray(existingRoles) ? existingRoles : []).map(role => ({ ...role }));
+    const byId = new Map(roles.map(role => [role.id, role]));
+    for (const definition of SYSTEM_ROLE_DEFINITIONS) {
+        const existing = byId.get(definition.id);
+        if (!existing) {
+            const systemRole = { ...definition, kind: 'system', systemVersion: SYSTEM_ROLE_VERSION };
+            roles.push(systemRole);
+            byId.set(systemRole.id, systemRole);
+        } else if (existing.kind === 'system' || (!existing.kind && hasLegacySystemRoleSignature(existing, LEGACY_SYSTEM_ROLE_SIGNATURES[definition.id]))) {
+            const systemRole = { ...existing, ...definition, kind: 'system', systemVersion: SYSTEM_ROLE_VERSION };
+            byId.set(systemRole.id, systemRole);
+        } else if (!existing.kind) {
+            byId.set(existing.id, { ...existing, kind: 'custom' });
+        }
+    }
+    return roles.map(role => byId.get(role.id) || role);
+}
 
 class SealarcaDB {
     constructor() {
@@ -190,40 +318,8 @@ class SealarcaDB {
 
     async _initDefaultRoles() {
         const existingRoles = await this._getAllDirect('roles');
-        if (existingRoles.length > 0) return;
-        const defaultRoles = [
-            {
-                id: 'role-legal', name: 'Juriste & Droit des Contrats', icon: '⚖️',
-                description: 'Analyse rigoureuse de clauses contractuelles, identification des risques et conformité (CO/LPD).',
-                systemPrompt: `Tu es un juriste expert de haut niveau spécialisé en droit suisse (Code des Obligations, Loi sur la protection des données - LPD) et droit comparé.
-Ton rôle est d'analyser minutieusement les contrats, actes et pièces juridiques.
-- Identifie les clauses à risque, ambiguïtés et déséquilibres.
-- Propose des reformulations claires et protectrices.
-- Structure tes réponses avec méthode : Constat, Analyse juridique, Recommandations concrètes.`
-            },
-            {
-                id: 'role-fiduciary', name: 'Expert Fiscal & Fiduciaire', icon: '📊',
-                description: 'Analyse de bilans, comptes de résultat, ratios financiers et conformité fiscale.',
-                systemPrompt: `Tu es un expert fiduciaire et fiscaliste chevronné.
-Ton rôle est d'analyser des documents comptables, tableaux financiers (Excel/CSV) et déclarations fiscales.
-- Analyse les indicateurs de performance, de liquidité et de solvabilité.
-- Relève les anomalies ou incohérences dans les données chiffrées.
-- Rédige des synthèses financières claires pour la direction.`
-            },
-            {
-                id: 'role-compliance', name: 'Conformité & Secret Professionnel', icon: '🛡️',
-                description: 'Vérification de conformité réglementaire, diligence raisonnable (KYC/LBA) et confidentialité.',
-                systemPrompt: `Tu es un officier de conformité (Compliance Officer) et expert en réglementation suisse et internationale (LBA, CDB, RGPD/nLPD).
-Ton rôle est d'évaluer les risques de conformité, de vérifier l'adéquation des processus et d'assister dans la rédaction de mémos de conformité rigoureux.`
-            },
-            {
-                id: 'role-executive', name: 'Synthèse Exécutive & Rédaction', icon: '✍️',
-                description: 'Restitution synthétique, mémos de direction, comptes-rendus et courriers officiels.',
-                systemPrompt: `Tu es un conseiller en rédaction exécutive pour comités de direction et conseils d'administration.
-Ton rôle est de synthétiser des dossiers volumineux en notes de synthèse concises, percutantes et élégantes, en conservant tous les éléments décisionnels cruciaux.`
-            }
-        ];
-        await Promise.all(defaultRoles.map(role => this._request('roles', 'readwrite', store => store.put(role))));
+        const mergedRoles = mergeSystemRoles(existingRoles);
+        await Promise.all(mergedRoles.map(role => this._request('roles', 'readwrite', store => store.put(role))));
     }
 
     async getSetting(key, defaultValue = null) {
@@ -646,4 +742,8 @@ Ton rôle est de synthétiser des dossiers volumineux en notes de synthèse conc
 }
 
 window.SEALARCA_DEFAULT_FOLDER_ID = DEFAULT_FOLDER_ID;
+window.SEALARCA_DEFAULT_ROLE_ID = DEFAULT_ROLE_ID;
+window.SEALARCA_SYSTEM_ROLE_VERSION = SYSTEM_ROLE_VERSION;
+window.SEALARCA_SYSTEM_ROLE_DEFINITIONS = SYSTEM_ROLE_DEFINITIONS;
+window.SEALARCA_MERGE_SYSTEM_ROLES = mergeSystemRoles;
 window.sealarcaDb = new SealarcaDB();

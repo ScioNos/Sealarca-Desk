@@ -6,7 +6,7 @@
 *Lokale Dokumentaufbereitung, explizite Kontextauswahl und direkter Vault-Zugriff.*
 
 [![Lizenz: PolyForm Perimeter 1.0.1](https://img.shields.io/badge/Lizenz-PolyForm%20Perimeter%201.0.1-087F68.svg)](LICENSE)
-[![Version: v1.0.1](https://img.shields.io/badge/Version-v1.0.1-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.0.1)
+[![Version: v1.0.2](https://img.shields.io/badge/Version-v1.0.2-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.0.2)
 
 🌐 **Language / Langue / Sprache / Lingua / Idioma**  
 [English 🇬🇧](README.md) · [Français 🇫🇷](README.fr.md) · **Deutsch** · [Italiano 🇮🇹](README.it.md) · [Español 🇪🇸](README.es.md)
@@ -32,7 +32,7 @@ Zur Laufzeit werden weder ein zwischengeschaltetes Anwendungs-Backend noch Analy
 - **KI-generierte Dokumentprofile** (Zusammenfassung, Personen, Organisationen, Daten und wichtige Punkte) über eine persistente Queue mit zwei Workern, Wiederholung, Abbruch, Deduplizierung und Wiederaufnahme nach Unterbrechung. Dafür wird das Dokument-Markdown an das gewählte Sealarca-Modell gesendet.
 - **Responses-API-Integration**: dynamische Modellabfrage über `GET /v1/models`; Streaming- und Nicht-Streaming-Anfragen über `POST /v1/responses` mit `store: false`, Timeout, HTTP-Backoff und Abbruch.
 - **Streaming-Ausgabe** mit Reasoning-Bereich, wenn das Gateway unterstützte Reasoning-Summary-Ereignisse liefert.
-- **Vier integrierte Rollen**: Recht & Vertragsrecht, Steuern & Treuhand, Compliance & Berufsgeheimnis sowie Executive Summary & Redaktion.
+- **Fünf Arbeitsmodi**: Dokumentenanalyse, Zusammenfassung & Redaktion, Recht & Verträge, Steuern & Treuhand sowie Compliance & Vertraulichkeit.
 - **Fünf Oberflächensprachen**: Französisch, Deutsch, Italienisch, Englisch und Spanisch.
 - **Helles/dunkles Design**, strikte CSP, bereinigte Markdown-Ausgabe und lokale Abhängigkeiten.
 
@@ -64,7 +64,7 @@ Sealarca-Desk/
 ├── js/
 │   ├── boot-theme.js          # Wendet das Design vor dem Rendern an
 │   ├── i18n.js                # Wörterbücher für fünf Sprachen
-│   ├── db.js                  # IndexedDB-Schema v3 und Persistenz
+│   ├── db.js                  # IndexedDB-Schema v4 und Persistenz
 │   ├── doc-handler.js         # Lokale Extraktion, Markdown, Herkunft
 │   ├── api.js                 # Fester Sealarca-Responses-API-Client
 │   ├── p1.js                  # Suche, Profile, Zitate und persistente Queue

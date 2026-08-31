@@ -15,11 +15,13 @@ const SEALARCA_I18N = {
             noConversations: 'Aucune consultation enregistrée',
             apiKey: 'Clé API',
             edit: 'Modifier',
-            model: 'Modèle',
+            model: 'Modèle · moteur IA',
+            modelHint: 'Choisissez un modèle pour commencer. Vous pourrez le changer à tout moment.',
+            roleHint: 'Façon de travailler adaptée à votre tâche.',
             close: 'Fermer',
             themeDark: 'Activer le thème sombre',
             themeLight: 'Activer le thème clair',
-            roles: 'Rôles métiers',
+            roles: 'Modes de travail',
             vaultStatus: 'VAULT · SERVICE SEALARCA',
             connecting: 'Connexion à Sealarca...',
             copy: 'Copier',
@@ -32,7 +34,7 @@ const SEALARCA_I18N = {
         documents: { title: 'Bibliothèque', add: 'Ajouter des documents', close: 'Terminé', empty: 'Aucun document dans ce dossier.', selectionHint: 'Sélectionnez les documents à utiliser uniquement pour la prochaine demande.', preview: 'Consulter', download: 'Original', provenance: 'Repères de provenance', downloadOriginal: 'Télécharger le fichier original', deleteConfirm: 'Supprimer ce document du dossier ?', workspaceKicker: 'DOSSIER ACTIF', workspaceSubtitle: 'Vue d’ensemble, recherche locale et traitements documentaires', contextTitle: 'Contexte de la prochaine demande', manualMode: 'Manuel', automaticMode: 'Automatique local', automaticHint: 'Desk recherche localement les passages pertinents avant l’envoi ; seuls ces extraits sont transmis.', searchLabel: 'Rechercher dans les documents', searchPlaceholder: 'Rechercher dans le Markdown du dossier…', searchScope: 'Recherche locale — aucun contenu n’est envoyé au réseau.', noSearchResults: 'Aucun passage correspondant dans ce dossier.', queueTitle: 'Queue locale', queueDescription: 'Deux traitements simultanés au maximum. Les checkpoints permettent la reprise.', queueAction: 'Ajouter les fiches manquantes', noJobs: 'Aucun traitement enregistré.', jobCancel: 'Annuler', jobRetry: 'Reprendre', overviewTab: 'Vue d’ensemble', libraryTab: 'Documents', searchTab: 'Recherche locale', jobsTab: 'Traitements', overviewTitle: 'Registre du dossier', overviewDescription: 'Cette vue est calculée depuis les documents et fiches conservés dans IndexedDB.', exportOverview: 'Exporter index.md', generateMissing: 'Générer les fiches manquantes', documentStat: 'Documents', volumeStat: 'Volume connu', profilesStat: 'Fiches disponibles', documentsSection: 'Documents', peopleOrganizationsSection: 'Personnes / organisations', datesSection: 'Dates principales', itemsSection: 'Éléments importants', overviewEmpty: 'Ajoutez un document pour constituer le dossier.', overviewEntitiesEmpty: 'Les entités apparaîtront après génération des fiches.', generateProfile: 'Générer la fiche', profileTitle: 'FICHE DOCUMENTAIRE', people: 'Personnes', organizations: 'Organisations', profileAvailable: 'Fiche disponible', profileToGenerate: 'Fiche à générer', statusPending: 'En attente', statusRunning: 'En cours', statusCompleted: 'Terminée', statusFailed: 'Échec', statusCancelled: 'Annulée' },
         empty: {
             title: "L'IA dans un coffre-fort numérique.",
-            desc: "Traitez vos contrats, bilans, dossiers et documents confidentiels en toute sérénité. Vos requêtes sont traitées dans un environnement matériellement isolé et chiffré en Suisse.",
+            desc: "Traitez vos contrats, bilans, dossiers et documents confidentiels en toute sérénité. Vos requêtes sont traitées dans un environnement d’exécution protégé et matériellement isolé.",
             card1Title: "⚖️ Analyser un contrat",
             card1Desc: "Glissez un document Word ou PDF pour auditer ses clauses et risques.",
             card1Prompt: "Analyse ce contrat et identifie les clauses à risque, obligations réciproques et points de vigilance :",
@@ -46,7 +48,7 @@ const SEALARCA_I18N = {
         input: {
             placeholder: "Posez une question ou glissez-déposez un document (PDF, Word, Excel)...",
             attachDoc: "Joindre un document",
-            roleLabel: "Rôle",
+            roleLabel: "Mode de travail",
             send: "Envoyer",
             stop: "Arrêter la génération"
         },
@@ -62,7 +64,8 @@ const SEALARCA_I18N = {
             networkError: "Impossible de joindre Sealarca. Vérifiez votre connexion et l’accès réseau de la page locale.",
             endpointLabel: "Endpoint API",
             endpointHint: "Par défaut : https://sealarca.ch/v1",
-            modelsTitle: "Modèles disponibles dans votre Vault",
+            modelsTitle: "Modèles disponibles pour cet accès Sealarca",
+            modelsHint: "La liste est chargée automatiquement depuis votre accès Sealarca. Vous pouvez changer de modèle à tout moment.",
             testBtn: "🔄 Tester & Découvrir",
             syncing: "Synchronisation...",
             saveBtn: "Enregistrer",
@@ -73,29 +76,34 @@ const SEALARCA_I18N = {
             hideKey: "Masquer la clé"
         },
         roles: {
-            title: "⚖️ Rôles & Personas Métiers",
-            desc: "Sélectionnez un profil pour adapter le comportement de l'IA à vos exigences professionnelles :",
+            title: "⚖️ Modes de travail",
+            desc: "Choisissez une méthode de travail adaptée à votre tâche.",
             activeBadge: "✓ ACTIF",
             closeBtn: "Fermer",
+            'document-analysis': {
+                name: "Analyse documentaire",
+                icon: "📄",
+                desc: "Analysez vos documents, comparez les informations et identifiez les éléments importants."
+            },
             legal: {
-                name: "Juriste & Droit des Contrats",
+                name: "Juridique & Contrats",
                 icon: "⚖️",
-                desc: "Analyse rigoureuse de clauses contractuelles, identification des risques et conformité (CO/LPD)."
+                desc: "Analyse de contrats, clauses, obligations, risques et documents juridiques."
             },
             fiduciary: {
-                name: "Expert Fiscal & Fiduciaire",
+                name: "Fiscal & Fiduciaire",
                 icon: "📊",
-                desc: "Analyse de bilans, comptes de résultat, ratios financiers et conformité fiscale."
+                desc: "Analyse financière, comptable, fiduciaire et fiscale à partir de vos documents."
             },
             compliance: {
-                name: "Conformité & Secret Professionnel",
+                name: "Conformité & Confidentialité",
                 icon: "🛡️",
-                desc: "Vérification de conformité réglementaire, diligence raisonnable (KYC/LBA) et confidentialité."
+                desc: "Analyse des exigences de conformité, confidentialité, diligence et protection des données."
             },
             executive: {
-                name: "Synthèse Exécutive & Rédaction",
+                name: "Synthèse & Rédaction",
                 icon: "✍️",
-                desc: "Restitution synthétique, mémos de direction, comptes-rendus et courriers officiels."
+                desc: "Résumés, notes de synthèse, comptes-rendus, mémos et rédaction professionnelle."
             }
         },
         reasoning: {
@@ -116,11 +124,13 @@ const SEALARCA_I18N = {
             noConversations: 'Keine Konsultationen gespeichert',
             apiKey: 'API-Schlüssel',
             edit: 'Bearbeiten',
-            model: 'Modell',
+            model: 'Modell · KI-System',
+            modelHint: 'Wählen Sie ein Modell aus. Sie können es jederzeit ändern.',
+            roleHint: 'Arbeitsweise passend zu Ihrer Aufgabe.',
             close: 'Schließen',
             themeDark: 'Dunkles Thema aktivieren',
             themeLight: 'Helles Thema aktivieren',
-            roles: 'Fachrollen',
+            roles: 'Arbeitsmodi',
             vaultStatus: 'VAULT · SEALARCA-DIENST',
             connecting: 'Verbindung zu Sealarca...',
             copy: 'Kopieren',
@@ -133,7 +143,7 @@ const SEALARCA_I18N = {
         documents: { title: 'Dokumentenbibliothek', add: 'Dokumente hinzufügen', close: 'Fertig', empty: 'Keine Dokumente in diesem Ordner.', selectionHint: 'Wählen Sie Dokumente nur für die nächste Anfrage aus.', preview: 'Ansehen', download: 'Original', provenance: 'Quellenverweise', downloadOriginal: 'Originaldatei herunterladen', deleteConfirm: 'Dieses Dokument löschen?', workspaceKicker: 'AKTIVER ORDNER', workspaceSubtitle: 'Übersicht, lokale Suche und Dokumentverarbeitung', contextTitle: 'Kontext für die nächste Anfrage', manualMode: 'Manuell', automaticMode: 'Automatisch lokal', automaticHint: 'Desk sucht relevante Passagen lokal, bevor sie gesendet werden; nur diese Auszüge werden übertragen.', searchLabel: 'Dokumente durchsuchen', searchPlaceholder: 'Im Markdown dieses Ordners suchen…', searchScope: 'Lokale Suche — keine Inhalte werden ins Netzwerk gesendet.', noSearchResults: 'Keine passenden Passagen in diesem Ordner.', queueTitle: 'Lokale Warteschlange', queueDescription: 'Maximal zwei parallele Verarbeitungen. Checkpoints ermöglichen die Wiederaufnahme.', queueAction: 'Fehlende Profile hinzufügen', noJobs: 'Keine Verarbeitung gespeichert.', jobCancel: 'Abbrechen', jobRetry: 'Fortsetzen', overviewTab: 'Übersicht', libraryTab: 'Dokumente', searchTab: 'Lokale Suche', jobsTab: 'Verarbeitung', overviewTitle: 'Ordnerregister', overviewDescription: 'Diese Ansicht wird aus den in IndexedDB gespeicherten Dokumenten und Profilen berechnet.', exportOverview: 'index.md exportieren', generateMissing: 'Fehlende Profile erstellen', documentStat: 'Dokumente', volumeStat: 'Bekanntes Volumen', profilesStat: 'Profile verfügbar', documentsSection: 'Dokumente', peopleOrganizationsSection: 'Personen / Organisationen', datesSection: 'Wichtige Daten', itemsSection: 'Wichtige Punkte', overviewEmpty: 'Fügen Sie ein Dokument hinzu, um den Ordner aufzubauen.', overviewEntitiesEmpty: 'Entitäten erscheinen nach der Profilerstellung.', generateProfile: 'Profil erstellen', profileTitle: 'DOKUMENTPROFIL', people: 'Personen', organizations: 'Organisationen', profileAvailable: 'Profil verfügbar', profileToGenerate: 'Profil ausstehend', statusPending: 'Ausstehend', statusRunning: 'In Bearbeitung', statusCompleted: 'Abgeschlossen', statusFailed: 'Fehlgeschlagen', statusCancelled: 'Abgebrochen' },
         empty: {
             title: "KI im digitalen Tresor.",
-            desc: "Verarbeiten Sie Verträge, Bilanzen, Akten und vertrauliche Dokumente mit voller Sicherheit. Ihre Anfragen werden in einer hardware-isolierten und verschlüsselten Umgebung in der Schweiz verarbeitet.",
+            desc: "Verarbeiten Sie Verträge, Bilanzen, Akten und vertrauliche Dokumente mit voller Sicherheit. Ihre Anfragen werden in einer geschützten, hardwareisolierten Ausführungsumgebung verarbeitet.",
             card1Title: "⚖️ Vertrag analysieren",
             card1Desc: "Ziehen Sie ein Word- oder PDF-Dokument hinein, um Klauseln und Risiken zu prüfen.",
             card1Prompt: "Analysieren Sie diesen Vertrag und identifizieren Sie Risikoklauseln, gegenseitige Verpflichtungen und Prüfpunkte:",
@@ -147,7 +157,7 @@ const SEALARCA_I18N = {
         input: {
             placeholder: "Stellen Sie eine Frage oder ziehen Sie ein Dokument hinein (PDF, Word, Excel)...",
             attachDoc: "Dokument anhängen",
-            roleLabel: "Rolle",
+            roleLabel: "Arbeitsmodus",
             send: "Senden",
             stop: "Generierung stoppen"
         },
@@ -163,7 +173,8 @@ const SEALARCA_I18N = {
             networkError: "Sealarca ist nicht erreichbar. Prüfen Sie Verbindung und Netzwerkzugriff der lokalen Seite.",
             endpointLabel: "API-Endpunkt",
             endpointHint: "Standard: https://sealarca.ch/v1",
-            modelsTitle: "Verfügbare Modelle in Ihrem Vault",
+            modelsTitle: "Modelle für diesen Sealarca-Zugang",
+            modelsHint: "Die Liste wird automatisch aus Ihrem Sealarca-Zugang geladen. Sie können das Modell jederzeit ändern.",
             testBtn: "🔄 Testen & Erkennen",
             syncing: "Synchronisierung...",
             saveBtn: "Speichern",
@@ -174,29 +185,34 @@ const SEALARCA_I18N = {
             hideKey: "Schlüssel ausblenden"
         },
         roles: {
-            title: "⚖️ Fachrollen & Personas",
-            desc: "Wählen Sie ein Profil, um das KI-Verhalten an Ihre beruflichen Anforderungen anzupassen:",
+            title: "⚖️ Arbeitsmodi",
+            desc: "Wählen Sie eine Arbeitsweise passend zu Ihrer Aufgabe.",
             activeBadge: "✓ AKTIV",
             closeBtn: "Schließen",
+            'document-analysis': {
+                name: "Dokumentenanalyse",
+                icon: "📄",
+                desc: "Analysieren Sie Ihre Dokumente, vergleichen Sie Informationen und erkennen Sie wichtige Punkte."
+            },
             legal: {
-                name: "Recht & Vertragsrecht",
+                name: "Recht & Verträge",
                 icon: "⚖️",
-                desc: "Sorgfältige Klauselprüfung, Risikoerkennung und Schweizer Rechtskonformität (OR/DSG)."
+                desc: "Analyse von Verträgen, Klauseln, Pflichten, Risiken und juristischen Dokumenten."
             },
             fiduciary: {
-                name: "Steuer- & Treuhandexperte",
+                name: "Steuern & Treuhand",
                 icon: "📊",
-                desc: "Analyse von Bilanzen, Erfolgsrechnungen, Finanzkennzahlen und Steuerfragen."
+                desc: "Finanzielle, buchhalterische, treuhänderische und steuerliche Analyse Ihrer Dokumente."
             },
             compliance: {
-                name: "Compliance & Berufsgeheimnis",
+                name: "Compliance & Vertraulichkeit",
                 icon: "🛡️",
-                desc: "Prüfung regulatorischer Vorgaben, Sorgfaltspflichten (GwG/VSB) und Datenschutz."
+                desc: "Analyse von Compliance-, Vertraulichkeits-, Sorgfalts- und Datenschutzanforderungen."
             },
             executive: {
-                name: "Executive Summary & Redaktion",
+                name: "Zusammenfassung & Redaktion",
                 icon: "✍️",
-                desc: "Präzise Direktionsmemos, Sitzungsprotokolle und offizielle Korrespondenz."
+                desc: "Zusammenfassungen, Entscheidungsnotizen, Protokolle, Memos und professionelle Texte."
             }
         },
         reasoning: {
@@ -217,11 +233,13 @@ const SEALARCA_I18N = {
             noConversations: 'Nessuna consultazione salvata',
             apiKey: 'Chiave API',
             edit: 'Modifica',
-            model: 'Modello',
+            model: 'Modello · motore IA',
+            modelHint: 'Scegli un modello per iniziare. Potrai cambiarlo in qualsiasi momento.',
+            roleHint: 'Metodo di lavoro adatto alla tua attività.',
             close: 'Chiudi',
             themeDark: 'Attiva tema scuro',
             themeLight: 'Attiva tema chiaro',
-            roles: 'Ruoli professionali',
+            roles: 'Modalità di lavoro',
             vaultStatus: 'VAULT · SERVIZIO SEALARCA',
             connecting: 'Connessione a Sealarca...',
             copy: 'Copia',
@@ -234,7 +252,7 @@ const SEALARCA_I18N = {
         documents: { title: 'Biblioteca documenti', add: 'Aggiungi documenti', close: 'Fine', empty: 'Nessun documento in questa cartella.', selectionHint: 'Seleziona i documenti da usare solo per la prossima richiesta.', preview: 'Consulta', download: 'Originale', provenance: 'Riferimenti di provenienza', downloadOriginal: 'Scarica file originale', deleteConfirm: 'Eliminare questo documento?', workspaceKicker: 'CARTELLA ATTIVA', workspaceSubtitle: 'Panoramica, ricerca locale ed elaborazione documenti', contextTitle: 'Contesto della prossima richiesta', manualMode: 'Manuale', automaticMode: 'Automatico locale', automaticHint: 'Desk cerca localmente i passaggi pertinenti prima dell’invio; vengono trasmessi solo questi estratti.', searchLabel: 'Cerca nei documenti', searchPlaceholder: 'Cerca nel Markdown della cartella…', searchScope: 'Ricerca locale — nessun contenuto viene inviato alla rete.', noSearchResults: 'Nessun passaggio corrispondente in questa cartella.', queueTitle: 'Coda locale', queueDescription: 'Massimo due elaborazioni simultanee. I checkpoint consentono la ripresa.', queueAction: 'Aggiungi schede mancanti', noJobs: 'Nessuna elaborazione registrata.', jobCancel: 'Annulla', jobRetry: 'Riprendi', overviewTab: 'Panoramica', libraryTab: 'Documenti', searchTab: 'Ricerca locale', jobsTab: 'Elaborazioni', overviewTitle: 'Registro della cartella', overviewDescription: 'Questa vista è calcolata dai documenti e dai profili conservati in IndexedDB.', exportOverview: 'Esporta index.md', generateMissing: 'Genera i profili mancanti', documentStat: 'Documenti', volumeStat: 'Volume noto', profilesStat: 'Profili disponibili', documentsSection: 'Documenti', peopleOrganizationsSection: 'Persone / organizzazioni', datesSection: 'Date principali', itemsSection: 'Elementi importanti', overviewEmpty: 'Aggiungi un documento per costituire la cartella.', overviewEntitiesEmpty: 'Le entità appariranno dopo la generazione dei profili.', generateProfile: 'Genera profilo', profileTitle: 'SCHEDA DOCUMENTO', people: 'Persone', organizations: 'Organizzazioni', profileAvailable: 'Profilo disponibile', profileToGenerate: 'Profilo da generare', statusPending: 'In attesa', statusRunning: 'In corso', statusCompleted: 'Completato', statusFailed: 'Errore', statusCancelled: 'Annullato' },
         empty: {
             title: "L'IA in una cassaforte digitale.",
-            desc: "Elabora contratti, bilanci, fascicoli e documenti riservati in totale sicurezza. Le tue richieste vengono elaborate in un ambiente crittografato e isolato a livello hardware in Svizzera.",
+            desc: "Elabora contratti, bilanci, fascicoli e documenti riservati in totale sicurezza. Le tue richieste vengono trattate in un ambiente di esecuzione protetto e isolato a livello hardware.",
             card1Title: "⚖️ Analizzare un contratto",
             card1Desc: "Trascina un documento Word o PDF per verificare clausole e rischi.",
             card1Prompt: "Analizza questo contratto e identifica le clausole a rischio, gli obblighi reciproci e i punti di attenzione:",
@@ -248,7 +266,7 @@ const SEALARCA_I18N = {
         input: {
             placeholder: "Fai una domanda o trascina un documento (PDF, Word, Excel)...",
             attachDoc: "Allega documento",
-            roleLabel: "Ruolo",
+            roleLabel: "Modalità di lavoro",
             send: "Invia",
             stop: "Interrompi generazione"
         },
@@ -264,7 +282,8 @@ const SEALARCA_I18N = {
             networkError: "Impossibile contattare Sealarca. Verifica la connessione e l’accesso di rete della pagina locale.",
             endpointLabel: "Endpoint API",
             endpointHint: "Predefinito: https://sealarca.ch/v1",
-            modelsTitle: "Modelli disponibili nel tuo Vault",
+            modelsTitle: "Modelli disponibili per questo accesso Sealarca",
+            modelsHint: "L’elenco viene caricato automaticamente dal tuo accesso Sealarca. Puoi cambiare modello in qualsiasi momento.",
             testBtn: "🔄 Testa & Rileva",
             syncing: "Sincronizzazione...",
             saveBtn: "Salva",
@@ -275,29 +294,34 @@ const SEALARCA_I18N = {
             hideKey: "Nascondi chiave"
         },
         roles: {
-            title: "⚖️ Ruoli & Profili Professionali",
-            desc: "Seleziona un profilo per adattare il comportamento dell'IA alle tue esigenze professionali:",
+            title: "⚖️ Modalità di lavoro",
+            desc: "Scegli un metodo di lavoro adatto alla tua attività.",
             activeBadge: "✓ ATTIVO",
             closeBtn: "Chiudi",
+            'document-analysis': {
+                name: "Analisi documentale",
+                icon: "📄",
+                desc: "Analizza i tuoi documenti, confronta le informazioni e individua gli elementi importanti."
+            },
             legal: {
-                name: "Giurista & Diritto Contrattuale",
+                name: "Diritto & Contratti",
                 icon: "⚖️",
-                desc: "Analisi rigorosa delle clausole, identificazione dei rischi e conformità (CO/LPD svizzera)."
+                desc: "Analisi di contratti, clausole, obblighi, rischi e documenti giuridici."
             },
             fiduciary: {
-                name: "Esperto Fiscale & Fiduciario",
+                name: "Fiscale & Fiduciario",
                 icon: "📊",
-                desc: "Analisi di bilanci, conti economici, indici finanziari e conformità fiscale."
+                desc: "Analisi finanziaria, contabile, fiduciaria e fiscale a partire dai tuoi documenti."
             },
             compliance: {
-                name: "Compliance & Segreto Professionale",
+                name: "Conformità & Riservatezza",
                 icon: "🛡️",
-                desc: "Verifica della conformità normativa, due diligence (RDLA/CDB) e riservatezza."
+                desc: "Analisi di requisiti di conformità, riservatezza, diligenza e protezione dei dati."
             },
             executive: {
-                name: "Sintesi Esecutiva & Redazione",
+                name: "Sintesi & Redazione",
                 icon: "✍️",
-                desc: "Note di sintesi dirigenziali, verbali e corrispondenza istituzionale."
+                desc: "Sintesi, note decisionali, verbali, memorandum e redazione professionale."
             }
         },
         reasoning: {
@@ -318,11 +342,13 @@ const SEALARCA_I18N = {
             noConversations: 'No saved consultations',
             apiKey: 'API Key',
             edit: 'Edit',
-            model: 'Model',
+            model: 'Model · AI engine',
+            modelHint: 'Choose a model to get started. You can change it at any time.',
+            roleHint: 'A way of working suited to your task.',
             close: 'Close',
             themeDark: 'Enable dark theme',
             themeLight: 'Enable light theme',
-            roles: 'Professional roles',
+            roles: 'Work modes',
             vaultStatus: 'VAULT · SEALARCA SERVICE',
             connecting: 'Connecting to Sealarca...',
             copy: 'Copy',
@@ -335,7 +361,7 @@ const SEALARCA_I18N = {
         documents: { title: 'Document library', add: 'Add documents', close: 'Done', empty: 'No documents in this folder.', selectionHint: 'Select documents to use only for the next request.', preview: 'View', download: 'Original', provenance: 'Source references', downloadOriginal: 'Download original file', deleteConfirm: 'Delete this document from the folder?', workspaceKicker: 'ACTIVE FOLDER', workspaceSubtitle: 'Overview, local search, and document processing', contextTitle: 'Context for the next request', manualMode: 'Manual', automaticMode: 'Automatic local', automaticHint: 'Desk searches for relevant passages locally before sending; only those excerpts are transmitted.', searchLabel: 'Search documents', searchPlaceholder: 'Search this folder’s Markdown…', searchScope: 'Local search — no content is sent to the network.', noSearchResults: 'No matching passage in this folder.', queueTitle: 'Local queue', queueDescription: 'Up to two processes run at once. Checkpoints allow resuming.', queueAction: 'Add missing profiles', noJobs: 'No processing recorded.', jobCancel: 'Cancel', jobRetry: 'Resume', overviewTab: 'Overview', libraryTab: 'Documents', searchTab: 'Local search', jobsTab: 'Processing', overviewTitle: 'Folder register', overviewDescription: 'This view is calculated from documents and profiles stored in IndexedDB.', exportOverview: 'Export index.md', generateMissing: 'Generate missing profiles', documentStat: 'Documents', volumeStat: 'Known volume', profilesStat: 'Profiles available', documentsSection: 'Documents', peopleOrganizationsSection: 'People / organizations', datesSection: 'Key dates', itemsSection: 'Important items', overviewEmpty: 'Add a document to build this folder.', overviewEntitiesEmpty: 'Entities appear after profiles are generated.', generateProfile: 'Generate profile', profileTitle: 'DOCUMENT PROFILE', people: 'People', organizations: 'Organizations', profileAvailable: 'Profile available', profileToGenerate: 'Profile to generate', statusPending: 'Pending', statusRunning: 'Running', statusCompleted: 'Completed', statusFailed: 'Failed', statusCancelled: 'Cancelled' },
         empty: {
             title: "AI in a digital vault.",
-            desc: "Process confidential contracts, statements, files, and reports with full peace of mind. Your requests are processed inside a hardware-isolated, encrypted environment in Switzerland.",
+            desc: "Process confidential contracts, statements, files, and reports with confidence. Your requests are handled in a protected, hardware-isolated execution environment.",
             card1Title: "⚖️ Analyze a contract",
             card1Desc: "Drop a Word or PDF file to audit clauses, risks, and obligations.",
             card1Prompt: "Analyze this contract and identify risk clauses, mutual obligations, and key focus points:",
@@ -349,7 +375,7 @@ const SEALARCA_I18N = {
         input: {
             placeholder: "Ask a question or drop a document (PDF, Word, Excel)...",
             attachDoc: "Attach document",
-            roleLabel: "Role",
+            roleLabel: "Work mode",
             send: "Send",
             stop: "Stop generation"
         },
@@ -365,7 +391,8 @@ const SEALARCA_I18N = {
             networkError: "Sealarca could not be reached. Check your connection and the local page’s network access.",
             endpointLabel: "API Endpoint",
             endpointHint: "Default: https://sealarca.ch/v1",
-            modelsTitle: "Available models in your Vault",
+            modelsTitle: "Models available for this Sealarca access",
+            modelsHint: "The list is loaded automatically from your Sealarca access. You can change models at any time.",
             testBtn: "🔄 Test & Discover",
             syncing: "Syncing...",
             saveBtn: "Save",
@@ -376,29 +403,34 @@ const SEALARCA_I18N = {
             hideKey: "Hide key"
         },
         roles: {
-            title: "⚖️ Professional Roles & Personas",
-            desc: "Select a profile to align AI behavior with your exact professional standards:",
+            title: "⚖️ Work modes",
+            desc: "Choose a working method suited to your task.",
             activeBadge: "✓ ACTIVE",
             closeBtn: "Close",
+            'document-analysis': {
+                name: "Document analysis",
+                icon: "📄",
+                desc: "Analyze your documents, compare information, and identify important elements."
+            },
             legal: {
-                name: "Legal & Contract Law",
+                name: "Legal & Contracts",
                 icon: "⚖️",
-                desc: "Thorough clause review, risk assessment, and Swiss/international compliance (CO/FADP)."
+                desc: "Analyze contracts, clauses, obligations, risks, and legal documents."
             },
             fiduciary: {
-                name: "Tax & Fiduciary Expert",
+                name: "Tax & Fiduciary",
                 icon: "📊",
-                desc: "Balance sheet reviews, financial ratios, P&L statements, and tax compliance."
+                desc: "Analyze financial, accounting, fiduciary, and tax information from your documents."
             },
             compliance: {
-                name: "Compliance & Professional Secrecy",
+                name: "Compliance & Confidentiality",
                 icon: "🛡️",
-                desc: "Regulatory compliance checks, KYC/AMLA due diligence, and confidentiality."
+                desc: "Analyze compliance, confidentiality, due diligence, and data-protection requirements."
             },
             executive: {
-                name: "Executive Summary & Drafting",
+                name: "Summary & Drafting",
                 icon: "✍️",
-                desc: "Concise executive briefing memos, board minutes, and official correspondence."
+                desc: "Summaries, decision notes, minutes, memos, and professional drafting."
             }
         },
         reasoning: {
@@ -419,11 +451,13 @@ const SEALARCA_I18N = {
             noConversations: 'Sin consultas guardadas',
             apiKey: 'Clave API',
             edit: 'Modificar',
-            model: 'Modelo',
+            model: 'Modelo · motor de IA',
+            modelHint: 'Elija un modelo para empezar. Podrá cambiarlo en cualquier momento.',
+            roleHint: 'Forma de trabajo adaptada a su tarea.',
             close: 'Cerrar',
             themeDark: 'Activar el tema oscuro',
             themeLight: 'Activar el tema claro',
-            roles: 'Roles profesionales',
+            roles: 'Modos de trabajo',
             vaultStatus: 'VAULT · SERVICIO SEALARCA',
             connecting: 'Conectando a Sealarca...',
             copy: 'Copiar',
@@ -436,7 +470,7 @@ const SEALARCA_I18N = {
         documents: { title: 'Biblioteca documental', add: 'Añadir documentos', close: 'Listo', empty: 'No hay documentos en esta carpeta.', selectionHint: 'Seleccione documentos para usarlos solo en la próxima solicitud.', preview: 'Consultar', download: 'Original', provenance: 'Referencias de origen', downloadOriginal: 'Descargar archivo original', deleteConfirm: '¿Eliminar este documento?', workspaceKicker: 'CARPETA ACTIVA', workspaceSubtitle: 'Resumen, búsqueda local y procesamiento documental', contextTitle: 'Contexto de la próxima solicitud', manualMode: 'Manual', automaticMode: 'Automático local', automaticHint: 'Desk busca localmente los pasajes pertinentes antes del envío; solo se transmiten esos extractos.', searchLabel: 'Buscar en los documentos', searchPlaceholder: 'Buscar en el Markdown de la carpeta…', searchScope: 'Búsqueda local — no se envía contenido a la red.', noSearchResults: 'No hay pasajes coincidentes en esta carpeta.', queueTitle: 'Cola local', queueDescription: 'Se ejecutan como máximo dos procesos a la vez. Los checkpoints permiten reanudar.', queueAction: 'Añadir fichas que faltan', noJobs: 'No hay procesos registrados.', jobCancel: 'Cancelar', jobRetry: 'Reanudar', overviewTab: 'Resumen', libraryTab: 'Documentos', searchTab: 'Búsqueda local', jobsTab: 'Procesos', overviewTitle: 'Registro de la carpeta', overviewDescription: 'Esta vista se calcula a partir de los documentos y fichas guardados en IndexedDB.', exportOverview: 'Exportar index.md', generateMissing: 'Generar fichas que faltan', documentStat: 'Documentos', volumeStat: 'Volumen conocido', profilesStat: 'Fichas disponibles', documentsSection: 'Documentos', peopleOrganizationsSection: 'Personas / organizaciones', datesSection: 'Fechas principales', itemsSection: 'Elementos importantes', overviewEmpty: 'Añada un documento para formar la carpeta.', overviewEntitiesEmpty: 'Las entidades aparecerán después de generar las fichas.', generateProfile: 'Generar ficha', profileTitle: 'FICHA DOCUMENTAL', people: 'Personas', organizations: 'Organizaciones', profileAvailable: 'Ficha disponible', profileToGenerate: 'Ficha pendiente', statusPending: 'Pendiente', statusRunning: 'En curso', statusCompleted: 'Completado', statusFailed: 'Error', statusCancelled: 'Cancelado' },
         empty: {
             title: "IA en una bóveda digital.",
-            desc: "Procese contratos, balances, expedientes y documentos confidenciales con total seguridad. Sus solicitudes se procesan en un entorno aislado por hardware y cifrado en Suiza.",
+            desc: "Procese contratos, balances, expedientes y documentos confidenciales con tranquilidad. Sus solicitudes se procesan en un entorno de ejecución protegido y aislado por hardware.",
             card1Title: "⚖️ Analizar un contrato",
             card1Desc: "Arrastre un documento Word o PDF para auditar cláusulas y riesgos.",
             card1Prompt: "Analice este contrato e identifique cláusulas de riesgo, obligaciones recíprocas y puntos de atención:",
@@ -450,7 +484,7 @@ const SEALARCA_I18N = {
         input: {
             placeholder: "Haga una pregunta o arrastre un documento (PDF, Word, Excel)...",
             attachDoc: "Adjuntar documento",
-            roleLabel: "Rol",
+            roleLabel: "Modo de trabajo",
             send: "Enviar",
             stop: "Detener generación"
         },
@@ -466,7 +500,8 @@ const SEALARCA_I18N = {
             networkError: "No se puede contactar con Sealarca. Compruebe la conexión y el acceso de red de la página local.",
             endpointLabel: "Endpoint API",
             endpointHint: "Por defecto: https://sealarca.ch/v1",
-            modelsTitle: "Modelos disponibles en su Vault",
+            modelsTitle: "Modelos disponibles para este acceso de Sealarca",
+            modelsHint: "La lista se carga automáticamente desde su acceso de Sealarca. Puede cambiar de modelo en cualquier momento.",
             testBtn: "🔄 Probar y Descubrir",
             syncing: "Sincronizando...",
             saveBtn: "Guardar",
@@ -477,29 +512,34 @@ const SEALARCA_I18N = {
             hideKey: "Ocultar clave"
         },
         roles: {
-            title: "⚖️ Roles y Perfiles Profesionales",
-            desc: "Seleccione un perfil para adaptar el comportamiento de la IA a sus requisitos profesionales:",
+            title: "⚖️ Modos de trabajo",
+            desc: "Elija un método de trabajo adaptado a su tarea.",
             activeBadge: "✓ ACTIVO",
             closeBtn: "Cerrar",
+            'document-analysis': {
+                name: "Análisis documental",
+                icon: "📄",
+                desc: "Analice sus documentos, compare la información e identifique los elementos importantes."
+            },
             legal: {
-                name: "Jurista y Derecho Contractual",
+                name: "Jurídico y Contratos",
                 icon: "⚖️",
-                desc: "Análisis riguroso de cláusulas, detección de riesgos y cumplimiento normativo (CO/LPD)."
+                desc: "Análisis de contratos, cláusulas, obligaciones, riesgos y documentos jurídicos."
             },
             fiduciary: {
-                name: "Experto Fiscal y Fiduciario",
+                name: "Fiscal y Fiduciario",
                 icon: "📊",
-                desc: "Análisis de balances, estados de resultados, ratios financieros y fiscalidad."
+                desc: "Análisis financiero, contable, fiduciario y fiscal a partir de sus documentos."
             },
             compliance: {
-                name: "Cumplimiento y Secreto Profesional",
+                name: "Cumplimiento y Confidencialidad",
                 icon: "🛡️",
-                desc: "Verificación de cumplimiento normativo, debida diligencia (PBC/KYC) y confidencialidad."
+                desc: "Análisis de requisitos de cumplimiento, confidencialidad, diligencia y protección de datos."
             },
             executive: {
-                name: "Resumen Ejecutivo y Redacción",
+                name: "Síntesis y Redacción",
                 icon: "✍️",
-                desc: "Notas ejecutivas de síntesis, actas y correspondencia institucional."
+                desc: "Resúmenes, notas de decisión, actas, memorandos y redacción profesional."
             }
         },
         reasoning: {

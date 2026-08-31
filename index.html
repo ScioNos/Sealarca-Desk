@@ -7,7 +7,7 @@
     
     <!-- Sécurité CSP stricte : Aucun script externe, requêtes autorisées uniquement vers Sealarca Vault et local -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' file: blob: data:; script-src 'self' file:; style-src 'self' file: 'unsafe-inline'; img-src 'self' file: data: blob:; font-src 'self' file: data:; connect-src 'self' file: blob: data: https://sealarca.ch http://localhost:* http://127.0.0.1:*; worker-src 'self' file: blob:; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'none';">
-    <script src="js/boot-theme.js?v=1.0.1"></script>
+    <script src="js/boot-theme.js?v=1.0.2"></script>
 
     <!-- Feuilles de style officielles Sealarca -->
     <link rel="stylesheet" href="css/theme.css">
@@ -89,10 +89,10 @@
 
             <!-- Pied de page Sidebar -->
             <div class="sidebar-footer">
-                <!-- Rôle Métier Actif -->
-                <button type="button" class="footer-btn" @click="openRoles" :title="appRoles">
+                <!-- Mode de travail actif -->
+                <button type="button" class="footer-btn" @click="openRoles" :title="roleButtonTitle" :aria-label="roleButtonTitle">
                     <span x-text="selectedRoleIcon"></span>
-                    <span x-text="selectedRoleName"></span>
+                    <span class="footer-btn-label"><span class="footer-btn-kicker" x-text="appRoles"></span><span x-text="selectedRoleName"></span><small class="footer-btn-hint" x-text="roleButtonHint"></small></span>
                 </button>
 
                 <!-- Ligne Paramètres & Thème -->
@@ -127,17 +127,20 @@
                     </div>
 
                     <!-- Sélecteur de Modèle du Vault -->
-                    <div style="position: relative;">
-                        <label class="sr-only" for="header-model-picker" x-text="modelPickerLabel"></label>
-                        <select id="header-model-picker" class="model-picker" :value="selectedModel" @change="updateSelectedModel" :disabled="modelsDisabled" :aria-label="modelPickerLabel">
-                            <option value="" x-text="modelChoosePrompt"></option>
-                            <template x-for="m in models" :key="m.id">
-                                <option :value="m.id" x-text="m.name"></option>
-                            </template>
-                            <template x-if="hasNoModels">
-                                <option value="" x-text="appConnecting"></option>
-                            </template>
-                        </select>
+                    <div class="model-picker-group">
+                        <div class="model-picker-row">
+                            <label class="model-picker-label" for="header-model-picker" x-text="modelPickerLabel"></label>
+                            <select id="header-model-picker" class="model-picker" :value="selectedModel" @change="updateSelectedModel" :disabled="modelsDisabled" :aria-label="modelPickerLabel" aria-describedby="model-picker-hint">
+                                <option value="" x-text="modelChoosePrompt"></option>
+                                <template x-for="m in models" :key="m.id">
+                                    <option :value="m.id" x-text="m.name"></option>
+                                </template>
+                                <template x-if="hasNoModels">
+                                    <option value="" x-text="appConnecting"></option>
+                                </template>
+                            </select>
+                        </div>
+                        <span id="model-picker-hint" class="model-picker-hint" x-show="!selectedModel" x-text="modelPickerHint"></span>
                     </div>
                 </div>
 
@@ -333,7 +336,7 @@
                                 <span x-text="appAddDocuments"></span>
                             </button>
 
-                            <button type="button" class="toolbar-btn" @click="openRoles" :title="appRoles">
+                            <button type="button" class="toolbar-btn" @click="openRoles" :title="roleButtonTitle" :aria-label="roleButtonTitle">
                                 <span x-text="selectedRoleIcon"></span>
                                 <span x-text="selectedInputRoleName"></span>
                             </button>
@@ -389,6 +392,7 @@
                     <!-- Liste des modèles découverts -->
                     <div class="form-group" x-show="hasModels">
                         <span class="form-label" id="settings-models-label" x-text="settingsModelsTitle"></span>
+                        <span class="form-hint" x-text="settingsModelsHint"></span>
                         <label class="sr-only" for="settings-model-picker" x-text="modelPickerLabel"></label>
                         <select id="settings-model-picker" class="form-select" :value="selectedModel" @change="updateSelectedModel" aria-labelledby="settings-models-label" :aria-label="modelPickerLabel">
                             <option value="" x-text="modelChoosePrompt"></option>
@@ -420,7 +424,7 @@
         </div>
 
         <!-- =================================================================
-             5. Modale de Gestion des Rôles Métiers
+             5. Modale de sélection des modes de travail
              ================================================================= -->
         <div class="modal-overlay" x-cloak x-show="isRolesOpen" x-transition :aria-hidden="!isRolesOpen" :inert="hasAnyModal && !isRolesOpen">
             <div class="modal-card" data-modal="roles" role="dialog" aria-modal="true" aria-labelledby="roles-title" aria-describedby="roles-description" @click.away="closeRoles">
@@ -645,12 +649,12 @@
     <script src="vendor/marked.min.js"></script>
     <script src="vendor/purify.min.js"></script>
     
-    <script src="js/i18n.js?v=1.0.1"></script>
-    <script src="js/db.js?v=1.0.1"></script>
-    <script src="js/doc-handler.js?v=1.0.1"></script>
-    <script src="js/api.js?v=1.0.1"></script>
-    <script src="js/p1.js?v=1.0.1"></script>
-    <script src="js/app.js?v=1.0.1"></script>
+    <script src="js/i18n.js?v=1.0.2"></script>
+    <script src="js/db.js?v=1.0.2"></script>
+    <script src="js/doc-handler.js?v=1.0.2"></script>
+    <script src="js/api.js?v=1.0.2"></script>
+    <script src="js/p1.js?v=1.0.2"></script>
+    <script src="js/app.js?v=1.0.2"></script>
     <script src="vendor/alpine-csp.min.js?v=3.16.2" defer></script>
 </body>
 </html>

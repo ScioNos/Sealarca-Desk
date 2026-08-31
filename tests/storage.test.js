@@ -6,9 +6,9 @@ const path = require('node:path');
 const root = path.join(__dirname, '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 
-test('IndexedDB v3 préserve P0 et ajoute fiches et checkpoints sans supprimer les données', () => {
+test('IndexedDB v4 préserve P0, synchronise les modes et conserve fiches et checkpoints', () => {
     const db = read('js/db.js');
-    assert.match(db, /const DB_VERSION = 3/);
+    assert.match(db, /const DB_VERSION = 4/);
     assert.match(db, /createObjectStore\('folders'/);
     assert.match(db, /createObjectStore\('documents'/);
     assert.match(db, /createObjectStore\('documentChunks'/);
@@ -16,6 +16,9 @@ test('IndexedDB v3 préserve P0 et ajoute fiches et checkpoints sans supprimer l
     assert.match(db, /createObjectStore\('processingJobs'/);
     assert.match(db, /recoverInterruptedJobs\(\)/);
     assert.match(db, /recovered_after_interruption/);
+    assert.match(db, /SYSTEM_ROLE_VERSION = 2/);
+    assert.match(db, /role-document-analysis/);
+    assert.match(db, /mergeSystemRoles/);
     assert.match(db, /createIndex\('folderId', 'folderId'/);
     assert.match(db, /if \(!conversation\.folderId\)/);
     assert.match(db, /conversation\.folderId = DEFAULT_FOLDER_ID/);
@@ -116,7 +119,7 @@ test('l’interface P1 expose vue dossier, recherche, queue et modes de contexte
     assert.match(html, /x-text="documentsQueueTitle"/);
     assert.match(html, /x-text="documentsAutomaticMode"/);
     assert.match(html, /x-text="documentsGenerateMissing"/);
-    assert.match(html, /js\/p1\.js\?v=1\.0\.1/);
+    assert.match(html, /js\/p1\.js\?v=1\.0\.2/);
 });
 
 test('le projet est source available sous PolyForm Perimeter 1.0.1', () => {
@@ -134,7 +137,7 @@ test('le projet est source available sous PolyForm Perimeter 1.0.1', () => {
 });
 
 
-test('la release corrective utilise la version 1.0.1 et conserve l’historique 1.0.0', () => {
+test('la release cumulative utilise la version 1.0.2 et conserve les versions précédentes', () => {
     const pkg = JSON.parse(read('package.json'));
     const changelog = read('CHANGELOG.md');
     const notes = read('RELEASE_NOTES.md');
@@ -142,16 +145,17 @@ test('la release corrective utilise la version 1.0.1 et conserve l’historique 
     const buildScript = read('scripts/build-release.ps1');
     const forbiddenDevelopmentVersion = ['1', '1', '0'].join('.');
 
-    assert.equal(pkg.version, '1.0.1');
+    assert.equal(pkg.version, '1.0.2');
     assert.ok(changelog.includes('## [1.0.0] - 2026-08-29')); 
     assert.ok(changelog.includes('## [1.0.1] - 2026-08-31'));
+    assert.ok(changelog.includes('## [1.0.2] - 2026-08-31'));
     assert.match(changelog, /First Official Release/i);
     assert.doesNotMatch(changelog, /changed from MIT/i);
-    assert.ok(notes.startsWith('# Sealarca Desk v1.0.1'));
-    assert.match(notes, /Fixes in v1.0.1/i);
-    assert.ok(notes.includes('Sealarca-Desk-v1.0.1.zip'));
-    assert.ok(buildScript.includes("[string]$Version = '1.0.1'"));
-    assert.ok(html.includes('js/app.js?v=1.0.1'));
+    assert.ok(notes.startsWith('# Sealarca Desk v1.0.2'));
+    assert.match(notes, /Fixes in v1.0.1 and v1.0.2/i);
+    assert.ok(notes.includes('Sealarca-Desk-v1.0.2.zip'));
+    assert.ok(buildScript.includes("[string]$Version = '1.0.2'"));
+    assert.ok(html.includes('js/app.js?v=1.0.2'));
 
     for (const contents of [changelog, notes, html, buildScript, JSON.stringify(pkg)]) {
         assert.equal(contents.includes(forbiddenDevelopmentVersion), false);

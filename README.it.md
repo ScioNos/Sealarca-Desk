@@ -6,7 +6,7 @@
 *Preparazione locale dei documenti, selezione esplicita del contesto e accesso diretto al Vault.*
 
 [![Licenza: PolyForm Perimeter 1.0.1](https://img.shields.io/badge/Licenza-PolyForm%20Perimeter%201.0.1-087F68.svg)](LICENSE)
-[![Versione: v1.0.1](https://img.shields.io/badge/Versione-v1.0.1-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.0.1)
+[![Versione: v1.0.2](https://img.shields.io/badge/Versione-v1.0.2-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.0.2)
 
 🌐 **Language / Langue / Sprache / Lingua / Idioma**  
 [English 🇬🇧](README.md) · [Français 🇫🇷](README.fr.md) · [Deutsch 🇩🇪](README.de.md) · **Italiano** · [Español 🇪🇸](README.es.md)
@@ -32,7 +32,7 @@ Il runtime non usa backend applicativi intermedi, SDK di analisi o CDN.
 - **Profili documentali generati dall’IA** (sintesi, persone, organizzazioni, date ed elementi importanti), elaborati da una coda persistente a due worker con retry, annullamento, deduplicazione e ripresa dopo un’interruzione. La generazione invia il Markdown del documento al modello Sealarca selezionato.
 - **Integrazione Responses API**: scoperta dinamica tramite `GET /v1/models`; richieste streaming e non streaming tramite `POST /v1/responses`, con `store: false`, timeout, backoff HTTP e annullamento.
 - **Output in streaming** con pannello di ragionamento quando il gateway emette gli eventi di riepilogo del ragionamento supportati.
-- **Quattro ruoli integrati**: Diritto e contratti, Esperto fiscale e fiduciario, Conformità e segreto professionale, Sintesi esecutiva e redazione.
+- **Cinque modalità di lavoro**: Analisi documentale, Sintesi e redazione, Diritto e contratti, Fiscale e fiduciario, Conformità e riservatezza.
 - **Cinque lingue dell’interfaccia**: francese, tedesco, italiano, inglese e spagnolo.
 - **Temi chiaro/scuro**, CSP rigorosa, rendering Markdown sanificato e dipendenze locali.
 
@@ -64,7 +64,7 @@ Sealarca-Desk/
 ├── js/
 │   ├── boot-theme.js          # Applica il tema prima del rendering
 │   ├── i18n.js                # Dizionari per cinque lingue
-│   ├── db.js                  # Schema IndexedDB v3 e persistenza
+│   ├── db.js                  # Schema IndexedDB v4 e persistenza
 │   ├── doc-handler.js         # Estrazione locale, Markdown, provenienza
 │   ├── api.js                 # Client fisso Sealarca Responses API
 │   ├── p1.js                  # Ricerca, profili, citazioni e coda persistente

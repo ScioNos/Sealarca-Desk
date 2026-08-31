@@ -6,7 +6,7 @@
 *Local document preparation, explicit context selection, and direct Vault access.*
 
 [![License: PolyForm Perimeter 1.0.1](https://img.shields.io/badge/License-PolyForm%20Perimeter%201.0.1-087F68.svg)](LICENSE)
-[![Release: v1.0.1](https://img.shields.io/badge/Release-v1.0.1-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.0.1)
+[![Release: v1.0.2](https://img.shields.io/badge/Release-v1.0.2-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.0.2)
 
 🌐 **Language / Langue / Sprache / Lingua / Idioma**  
 **English** · [Français 🇫🇷](README.fr.md) · [Deutsch 🇩🇪](README.de.md) · [Italiano 🇮🇹](README.it.md) · [Español 🇪🇸](README.es.md)
@@ -32,7 +32,7 @@ No application backend, analytics SDK, or CDN is used by the runtime.
 - **AI-generated document profiles** (summary, people, organizations, dates, and important items) processed through a persistent two-worker queue with retry, cancellation, deduplication, and recovery after interruption. Profile generation sends document Markdown to the selected Sealarca model.
 - **Responses API integration**: dynamic model discovery through `GET /v1/models`; streaming and non-streaming requests through `POST /v1/responses`, with `store: false`, timeout handling, retryable HTTP backoff, and cancellation.
 - **Streaming output** with a reasoning drawer when the gateway emits supported reasoning-summary events.
-- **Four built-in roles**: Legal & Contract Law, Tax & Fiduciary, Compliance & Professional Secrecy, and Executive Summary & Drafting.
+- **Five work modes**: Document Analysis, Summary & Drafting, Legal & Contracts, Tax & Fiduciary, and Compliance & Confidentiality.
 - **Five interface languages**: French, German, Italian, English, and Spanish.
 - **Light/dark themes**, strict CSP, sanitized Markdown rendering, and local vendor dependencies.
 
@@ -70,7 +70,7 @@ Sealarca-Desk/
 ├── js/
 │   ├── boot-theme.js          # Applies the saved theme before rendering
 │   ├── i18n.js                # Five-language UI dictionaries
-│   ├── db.js                  # IndexedDB schema v3 and persistence APIs
+│   ├── db.js                  # IndexedDB schema v4 and persistence APIs
 │   ├── doc-handler.js         # Local extraction, canonical Markdown, provenance
 │   ├── api.js                 # Fixed Sealarca Responses API client
 │   ├── p1.js                  # Search, profiles, citations, persistent job queue
