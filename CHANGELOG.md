@@ -4,6 +4,23 @@ All notable changes to **Sealarca-Desk** are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-08-31
+
+### Fixed
+
+- Preserve an existing session API key when migrating and remove stale legacy IndexedDB key material.
+- Require an explicit discovered-model choice instead of silently selecting the first alphabetic model.
+- Improve first-run key configuration with an accessible model selector, clearer session-storage wording, model-discovery errors and a Sealarca link.
+- Add keyboard-accessible native controls, modal focus trapping, background inertness, ARIA tab semantics, visible focus styles and reduced-motion handling.
+- Align the file picker with all supported parsers, including `.log` and `.xml`, and reject empty or malformed extracted documents.
+- Improve small-screen layout, touch targets, long-name handling and localization of the document workspace.
+- Prevent stale streaming cleanup from affecting a newer request and surface IndexedDB transaction aborts correctly.
+
+### Verification
+
+- Expanded the Node.js suite to 35 tests covering the corrected UI, storage and document contracts.
+- Rebuilt the `Sealarca-Desk-v1.0.1.zip` distribution and its SHA-256 checksum.
+
 ## [1.0.0] - 2026-08-29
 
 ### First Official Release

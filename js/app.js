@@ -65,12 +65,13 @@ document.addEventListener('alpine:init', () => {
         selectedRole: null,
 
         // --- État UI ---
-        sidebarCollapsed: false,
+        sidebarCollapsed: typeof window !== 'undefined' && window.innerWidth <= 900,
         searchQuery: '',
         isSettingsOpen: false,
         isRolesOpen: false,
         isDocumentsOpen: false,
         isDocumentPreviewOpen: false,
+        modalFocusStack: [],
         isDarkMode: false,
         isDraggingFile: false,
         toastMessage: '',
@@ -89,6 +90,8 @@ document.addEventListener('alpine:init', () => {
         get appSearchPlaceholder() { return this.t('app.searchPlaceholder'); },
         get appNoConversations() { return this.t('app.noConversations'); },
         get appApiKey() { return this.t('app.apiKey'); },
+        get appEdit() { return this.t('app.edit'); },
+        get appClose() { return this.t('app.close'); },
         get appRoles() { return this.t('app.roles'); },
         get appVaultStatus() { return this.t('app.vaultStatus'); },
         get appConnecting() { return this.t('app.connecting'); },
@@ -130,6 +133,10 @@ document.addEventListener('alpine:init', () => {
         get settingsSaveLabel() { return this.t('settings.saveBtn'); },
         get settingsForgetLabel() { return this.t('settings.forgetBtn'); },
         get settingsToggleKeyLabel() { return this.t(this.isApiKeyVisible ? 'settings.hideKey' : 'settings.showKey'); },
+        get settingsGetKeyLabel() { return this.t('settings.getKey'); },
+        get settingsCloseLabel() { return this.t('settings.closeBtn'); },
+        get modelPickerLabel() { return this.t('app.model'); },
+        get modelChoosePrompt() { return this.t('settings.chooseModel'); },
         get rolesTitle() { return this.t('roles.title'); },
         get rolesDesc() { return this.t('roles.desc'); },
         get rolesCloseLabel() { return this.t('roles.closeBtn'); },
@@ -144,7 +151,7 @@ document.addEventListener('alpine:init', () => {
         get selectedInputRoleName() { return this.selectedRole ? this.selectedRole.name : this.inputRoleLabel; },
         get showMoonIcon() { return !this.isDarkMode; },
         get showSunIcon() { return this.isDarkMode; },
-        get themeButtonLabel() { return this.isDarkMode ? 'Activer le thème clair' : 'Activer le thème sombre'; },
+        get themeButtonLabel() { return this.t(this.isDarkMode ? 'app.themeLight' : 'app.themeDark'); },
         get modelsDisabled() { return this.isStreaming || this.models.length === 0; },
         get hasNoModels() { return this.models.length === 0; },
         get showEmptyState() { return this.messages.length === 0 && !this.isStreaming; },
@@ -176,6 +183,7 @@ document.addEventListener('alpine:init', () => {
         get jobsTabClass() { return this.isJobsTab ? 'active' : ''; },
         get manualContextClass() { return this.isManualContext ? 'active' : ''; },
         get automaticContextClass() { return this.isAutomaticContext ? 'active' : ''; },
+        get hasAnyModal() { return this.isSettingsOpen || this.isRolesOpen || this.isDocumentsOpen || this.isDocumentPreviewOpen; },
         get hasDocumentSearchResults() { return this.documentSearchResults.length > 0; },
         get hasNoDocumentSearchResults() { return Boolean(this.documentSearchQuery.trim()) && this.documentSearchResults.length === 0; },
         get hasProcessingJobs() { return this.processingJobs.length > 0; },
@@ -185,6 +193,44 @@ document.addEventListener('alpine:init', () => {
         get isAutomaticContext() { return this.contextMode === 'automatic'; },
         get folderOverviewPagesLabel() { return this.folderOverview.pageCount > 0 ? this.folderOverview.pageCount + ' pages' : 'Pages non disponibles'; },
         get folderOverviewProfilesLabel() { return this.folderOverview.profileCount + ' / ' + this.folderOverview.documentCount; },
+
+        get documentsWorkspaceKicker() { return this.t('documents.workspaceKicker'); },
+        get documentsWorkspaceSubtitle() { return this.t('documents.workspaceSubtitle'); },
+        get documentsOverviewTab() { return this.t('documents.overviewTab'); },
+        get documentsLibraryTab() { return this.t('documents.libraryTab'); },
+        get documentsSearchTab() { return this.t('documents.searchTab'); },
+        get documentsJobsTab() { return this.t('documents.jobsTab'); },
+        get documentsOverviewTitle() { return this.t('documents.overviewTitle'); },
+        get documentsOverviewDescription() { return this.t('documents.overviewDescription'); },
+        get documentsExportOverview() { return this.t('documents.exportOverview'); },
+        get documentsGenerateMissing() { return this.t('documents.generateMissing'); },
+        get documentsDocumentStat() { return this.t('documents.documentStat'); },
+        get documentsVolumeStat() { return this.t('documents.volumeStat'); },
+        get documentsProfilesStat() { return this.t('documents.profilesStat'); },
+        get documentsSectionLabel() { return this.t('documents.documentsSection'); },
+        get documentsPeopleOrganizations() { return this.t('documents.peopleOrganizationsSection'); },
+        get documentsDatesSection() { return this.t('documents.datesSection'); },
+        get documentsItemsSection() { return this.t('documents.itemsSection'); },
+        get documentsOverviewEmpty() { return this.t('documents.overviewEmpty'); },
+        get documentsOverviewEntitiesEmpty() { return this.t('documents.overviewEntitiesEmpty'); },
+        get documentsGenerateProfile() { return this.t('documents.generateProfile'); },
+        get documentsProfileTitle() { return this.t('documents.profileTitle'); },
+        get documentsPeopleLabel() { return this.t('documents.people'); },
+        get documentsOrganizationsLabel() { return this.t('documents.organizations'); },
+        get documentsContextTitle() { return this.t('documents.contextTitle'); },
+        get documentsManualMode() { return this.t('documents.manualMode'); },
+        get documentsAutomaticMode() { return this.t('documents.automaticMode'); },
+        get documentsAutomaticHint() { return this.t('documents.automaticHint'); },
+        get documentsSearchLabel() { return this.t('documents.searchLabel'); },
+        get documentsSearchPlaceholder() { return this.t('documents.searchPlaceholder'); },
+        get documentsSearchScope() { return this.t('documents.searchScope'); },
+        get documentsNoSearchResults() { return this.t('documents.noSearchResults'); },
+        get documentsQueueTitle() { return this.t('documents.queueTitle'); },
+        get documentsQueueDescription() { return this.t('documents.queueDescription'); },
+        get documentsQueueAction() { return this.t('documents.queueAction'); },
+        get documentsNoJobs() { return this.t('documents.noJobs'); },
+        get documentsJobCancel() { return this.t('documents.jobCancel'); },
+        get documentsJobRetry() { return this.t('documents.jobRetry'); },
 
         conversationRowClass() {
             return this.activeConversationId === this.conv.id ? 'active' : '';
@@ -198,22 +244,88 @@ document.addEventListener('alpine:init', () => {
             this.inputPrompt = this.t(path);
             this.$nextTick(() => document.getElementById('chat-textarea')?.focus());
         },
-        openSettings() { this.isSettingsOpen = true; this.apiError = ''; this.focusApiKeyInput(); },
-        closeSettings() { if (this.hasConfiguredApi) this.isSettingsOpen = false; },
-        openRoles() { this.isRolesOpen = true; },
-        closeRoles() { this.isRolesOpen = false; },
-        openDocuments() { this.isDocumentsOpen = true; this.openOverviewTab(); this.refreshFolderWorkspace(); },
+        openModal(stateKey, modalName, focusSelector = null) {
+            if (!this[stateKey]) {
+                const active = document.activeElement;
+                this.modalFocusStack.push(active && active !== document.body ? active : null);
+                this[stateKey] = true;
+            }
+            this.$nextTick(() => this.focusModal(modalName, focusSelector));
+        },
+        focusModal(modalName, focusSelector = null) {
+            const card = document.querySelector(`[data-modal="${modalName}"]`);
+            if (!card) return;
+            const focusableSelector = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+            const focusables = Array.from(card.querySelectorAll(focusableSelector)).filter(element => element.getClientRects().length && !element.closest('[inert]'));
+            const target = focusSelector ? card.querySelector(focusSelector) : null;
+            (target && target.getClientRects().length ? target : focusables[0] || card).focus();
+        },
+        closeModal(stateKey, modalName, canClose = true) {
+            if (!canClose || !this[stateKey]) return false;
+            this[stateKey] = false;
+            const returnFocus = this.modalFocusStack.pop() || null;
+            this.$nextTick(() => {
+                if (returnFocus && returnFocus.isConnected && !returnFocus.closest('[inert]')) {
+                    returnFocus.focus();
+                } else {
+                    document.getElementById('chat-textarea')?.focus();
+                }
+            });
+            return true;
+        },
+        openSettings() { this.apiError = ''; this.openModal('isSettingsOpen', 'settings', '#api-key-input'); },
+        closeSettings() { return this.closeModal('isSettingsOpen', 'settings', this.hasConfiguredApi); },
+        openRoles() { this.openModal('isRolesOpen', 'roles', '.modal-close'); },
+        closeRoles() { return this.closeModal('isRolesOpen', 'roles'); },
+        openDocuments() { this.openModal('isDocumentsOpen', 'documents', '#overview-tab'); this.openOverviewTab(); this.refreshFolderWorkspace(); },
         openOverviewTab() { this.documentPanelTab = 'overview'; this.refreshFolderWorkspace(); },
         openLibraryTab() { this.documentPanelTab = 'library'; },
         openSearchTab() { this.documentPanelTab = 'search'; },
         openJobsTab() { this.documentPanelTab = 'jobs'; this.loadProcessingJobs(); },
         useManualContext() { this.contextMode = 'manual'; },
         useAutomaticContext() { this.contextMode = 'automatic'; },
-        closeDocuments() { this.isDocumentsOpen = false; },
-        closeDocumentPreview() { this.isDocumentPreviewOpen = false; this.previewDocument = null; },
-        closeOverlays() { this.closeRoles(); this.closeSettings(); this.closeDocuments(); this.closeDocumentPreview(); },
+        closeDocuments() { return this.closeModal('isDocumentsOpen', 'documents'); },
+        closeDocumentPreview() { const closed = this.closeModal('isDocumentPreviewOpen', 'preview'); if (closed) this.previewDocument = null; return closed; },
+        closeOverlays() {
+            if (this.isDocumentPreviewOpen) return this.closeDocumentPreview();
+            if (this.isDocumentsOpen) return this.closeDocuments();
+            if (this.isRolesOpen) return this.closeRoles();
+            if (this.isSettingsOpen) return this.closeSettings();
+            return false;
+        },
+        handleWindowKeydown(event) {
+            if (!this.hasAnyModal) return;
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                this.closeOverlays();
+            } else if (event.key === 'Tab') {
+                this.trapModalFocus(event);
+            }
+        },
+        trapModalFocus(event) {
+            const modalName = this.isDocumentPreviewOpen ? 'preview' : this.isDocumentsOpen ? 'documents' : this.isRolesOpen ? 'roles' : 'settings';
+            const card = document.querySelector(`[data-modal="${modalName}"]`);
+            if (!card) return;
+            const focusableSelector = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+            const focusables = Array.from(card.querySelectorAll(focusableSelector)).filter(element => element.getClientRects().length && !element.closest('[inert]'));
+            if (!focusables.length) {
+                event.preventDefault();
+                card.setAttribute('tabindex', '-1');
+                card.focus();
+                return;
+            }
+            const first = focusables[0];
+            const last = focusables[focusables.length - 1];
+            if (event.shiftKey && (document.activeElement === first || !card.contains(document.activeElement))) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && (document.activeElement === last || !card.contains(document.activeElement))) {
+                event.preventDefault();
+                first.focus();
+            }
+        },
         toggleSidebar() { this.sidebarCollapsed = !this.sidebarCollapsed; },
-        modelChanged() { return window.sealarcaDb.setSetting('sealarca_model', this.selectedModel); },
+        modelChanged() { return this.selectedModel ? window.sealarcaDb.setSetting('sealarca_model', this.selectedModel) : window.sealarcaDb.deleteSetting('sealarca_model'); },
         updateSearchQuery(event) { this.searchQuery = event.currentTarget.value; },
         updateSelectedModel(event) {
             this.selectedModel = event.currentTarget.value;
@@ -224,7 +336,7 @@ document.addEventListener('alpine:init', () => {
         sendOrStop() { return this.isStreaming ? this.stopGeneration() : this.sendMessage(); },
         toggleLiveReasoning() { this.isReasoningOpen = !this.isReasoningOpen; },
         toggleApiKeyVisibility() { this.isApiKeyVisible = !this.isApiKeyVisible; },
-        focusApiKeyInput() { this.$nextTick(() => document.getElementById('api-key-input')?.focus()); },
+        focusApiKeyInput() { this.$nextTick(() => this.focusModal('settings', '#api-key-input')); },
         handlePromptKeydown(event) {
             if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();
@@ -262,14 +374,16 @@ document.addEventListener('alpine:init', () => {
 
             // 3. Charger les paramètres sauvegardés
             let savedKey = '';
-            try { savedKey = sessionStorage.getItem('sealarca_api_key_session') || ''; } catch { /* indisponible */ }
-            const legacyKey = await window.sealarcaDb.getSetting('sealarca_api_key', '');
+            try { savedKey = (sessionStorage.getItem('sealarca_api_key_session') || '').trim(); } catch { /* indisponible */ }
+            const legacyKey = String((await window.sealarcaDb.getSetting('sealarca_api_key', '')) || '').trim();
             const savedModel = await window.sealarcaDb.getSetting('sealarca_model', '');
             const savedRole = await window.sealarcaDb.getSetting('sealarca_active_role', null);
 
             this.apiKey = savedKey || legacyKey;
-            if (legacyKey) {
+            if (!savedKey && legacyKey) {
                 try { sessionStorage.setItem('sealarca_api_key_session', legacyKey); } catch { /* indisponible */ }
+            }
+            if (legacyKey) {
                 await window.sealarcaDb.deleteSetting('sealarca_api_key');
             }
             this.selectedModel = savedModel;
@@ -290,7 +404,10 @@ document.addEventListener('alpine:init', () => {
             // 6. Si une clé API est présente, découvrir les modèles
             if (this.apiKey) {
                 const connected = await this.loadModels(true);
-                if (!connected) this.isSettingsOpen = true;
+                if (!connected) {
+                    this.isSettingsOpen = true;
+                    this.focusApiKeyInput();
+                }
             } else {
                 this.isSettingsOpen = true;
                 this.focusApiKeyInput();
@@ -409,8 +526,8 @@ document.addEventListener('alpine:init', () => {
                 if (this.models.length > 0) {
                     const exists = this.models.some(m => m.id === this.selectedModel);
                     if (!exists) {
-                        this.selectedModel = this.models[0].id;
-                        await window.sealarcaDb.setSetting('sealarca_model', this.selectedModel);
+                        this.selectedModel = '';
+                        await window.sealarcaDb.deleteSetting('sealarca_model');
                     }
                 }
                 try { sessionStorage.setItem('sealarca_api_key_session', this.apiKey.trim()); } catch { /* indisponible */ }
@@ -420,7 +537,11 @@ document.addEventListener('alpine:init', () => {
             } catch (err) {
                 console.error('Erreur découverte modèles:', err);
                 this.models = [];
-                this.apiError = err.message || 'Impossible de joindre le Vault Sealarca.';
+                this.selectedModel = '';
+                const rawMessage = String(err?.message || '');
+                this.apiError = !err?.status && /failed to fetch|network|networkerror|load failed|connexion/i.test(rawMessage)
+                    ? this.t('settings.networkError')
+                    : rawMessage || this.t('settings.networkError');
                 this.isSettingsOpen = true;
                 this.focusApiKeyInput();
                 return false;
@@ -436,7 +557,8 @@ document.addEventListener('alpine:init', () => {
             const cleanKey = this.apiKey ? this.apiKey.trim() : '';
             this.apiKey = cleanKey;
             const connected = await this.loadModels(false);
-            if (connected) this.isSettingsOpen = false;
+            if (connected && this.selectedModel) this.isSettingsOpen = false;
+            else if (connected) this.apiError = this.t('settings.modelRequired');
         },
 
         async forgetApiKey() {
@@ -460,6 +582,7 @@ document.addEventListener('alpine:init', () => {
                 const decorated = {
                     ...folder,
                     get rowClass() { return app.activeFolderId === folder.id ? 'active' : ''; },
+                    get isActive() { return app.activeFolderId === folder.id; },
                     select() { app.selectFolder(folder.id); },
                     edit() { app.editFolder(folder.id); },
                     remove() { app.deleteFolder(folder.id); }
@@ -543,7 +666,7 @@ document.addEventListener('alpine:init', () => {
                     get selectionMark() { return decorated.isSelected ? '✓' : '+'; },
                     get sizeLabel() { return app.formatBytes(document.size); },
                     get pageLabel() { const pages = Number(document.metadata?.pageCount || 0); return pages ? pages + ' pages' : ''; },
-                    get profileStatusLabel() { return decorated.profile?.status === 'valid' ? 'Fiche disponible' : 'Fiche à générer'; },
+                    get profileStatusLabel() { return app.t(decorated.profile?.status === 'valid' ? 'documents.profileAvailable' : 'documents.profileToGenerate'); },
                     toggle() { app.toggleDocumentSelection(document.id); },
                     preview() { app.openDocumentPreview(document.id); },
                     download() { app.downloadDocument(document.id); },
@@ -564,10 +687,11 @@ document.addEventListener('alpine:init', () => {
         },
 
         async openDocumentPreview(id) {
-            this.previewDocument = await window.sealarcaDb.getDocument(id);
-            if (this.previewDocument) {
-                this.previewDocument.profile = await window.sealarcaDb.getDocumentProfile(id);
-                this.isDocumentPreviewOpen = true;
+            const documentRecord = await window.sealarcaDb.getDocument(id);
+            if (documentRecord) {
+                documentRecord.profile = await window.sealarcaDb.getDocumentProfile(id);
+                this.previewDocument = documentRecord;
+                this.openModal('isDocumentPreviewOpen', 'preview', '.modal-close');
             }
         },
 
@@ -646,7 +770,7 @@ document.addEventListener('alpine:init', () => {
                 const decorated = {
                     ...job,
                     documentName: document?.name || job.documentId,
-                    get statusLabel() { return ({ pending: 'En attente', running: 'En cours', completed: 'Terminée', failed: 'Échec', cancelled: 'Annulée' })[job.status] || job.status; },
+                    get statusLabel() { return app.t(({ pending: 'documents.statusPending', running: 'documents.statusRunning', completed: 'documents.statusCompleted', failed: 'documents.statusFailed', cancelled: 'documents.statusCancelled' })[job.status] || 'documents.statusFailed'); },
                     get checkpointStage() { return job.checkpoint?.stage || ''; },
                     get canCancel() { return ['pending', 'running'].includes(job.status); },
                     get canRetry() { return ['failed', 'cancelled'].includes(job.status); },
@@ -755,6 +879,7 @@ document.addEventListener('alpine:init', () => {
                 const decorated = {
                     ...conversation,
                     get rowClass() { return app.activeConversationId === conversation.id ? 'active' : ''; },
+                    get isActive() { return app.activeConversationId === conversation.id; },
                     select() { app.selectConversation(conversation.id); },
                     remove() { app.deleteConversation(conversation.id); }
                 };
@@ -879,7 +1004,9 @@ document.addEventListener('alpine:init', () => {
             // 2. Conserver uniquement les références documentaires dans le message.
             const folderDocuments = await window.sealarcaDb.getDocuments(this.activeFolderId);
             const automaticSelection = this.contextMode === 'automatic'
-                ? window.SealarcaP1.selectRelevantDocuments(folderDocuments, text, { limit: 5 })
+                ? (text
+                    ? window.SealarcaP1.selectRelevantDocuments(folderDocuments, text, { limit: 5 })
+                    : this.selectedDocumentIds.map(id => ({ document: folderDocuments.find(document => document.id === id), score: 0 })).filter(item => item.document))
                 : [];
             const requestedIds = this.contextMode === 'automatic'
                 ? automaticSelection.map(item => item.document.id)
@@ -948,32 +1075,38 @@ document.addEventListener('alpine:init', () => {
                     this.isStreaming = false;
                 },
                 onDone: async (finalText, finalReasoning, metadata = {}) => {
-                    if (finalText || finalReasoning) {
-                        const assistantMsg = {
-                            id: 'msg_' + Date.now() + '_assistant',
-                            conversationId: this.activeConversationId,
-                            role: 'assistant',
-                            content: finalText || (metadata.interrupted ? '(Réponse interrompue)' : '(Réponse vide)'),
-                            reasoning: finalReasoning || null,
-                            model: this.selectedModel,
-                            interrupted: Boolean(metadata.interrupted),
-                            citations: window.SealarcaP1.extractCitations(finalText, selectedDocuments),
-                            createdAt: Date.now()
-                        };
-                        await window.sealarcaDb.saveMessage(assistantMsg);
-                        this.messages.push(this.decorateMessage(assistantMsg));
-                    }
-                    this.currentStreamingMessage = '';
-                    this.currentStreamingReasoning = '';
-                    this.isStreaming = false;
+                    try {
+                        if (finalText || finalReasoning) {
+                            const assistantMsg = {
+                                id: 'msg_' + Date.now() + '_assistant',
+                                conversationId: this.activeConversationId,
+                                role: 'assistant',
+                                content: finalText || (metadata.interrupted ? '(Réponse interrompue)' : '(Réponse vide)'),
+                                reasoning: finalReasoning || null,
+                                model: this.selectedModel,
+                                interrupted: Boolean(metadata.interrupted),
+                                citations: window.SealarcaP1.extractCitations(finalText, selectedDocuments),
+                                createdAt: Date.now()
+                            };
+                            await window.sealarcaDb.saveMessage(assistantMsg);
+                            this.messages.push(this.decorateMessage(assistantMsg));
+                        }
 
-                    // Mettre à jour l'horodatage de la conversation
-                    const conv = await window.sealarcaDb.getConversation(this.activeConversationId);
-                    if (conv) {
-                        await window.sealarcaDb.saveConversation(conv);
-                        await this.loadConversations();
+                        // Mettre à jour l'horodatage de la conversation
+                        const conv = await window.sealarcaDb.getConversation(this.activeConversationId);
+                        if (conv) {
+                            await window.sealarcaDb.saveConversation(conv);
+                            await this.loadConversations();
+                        }
+                    } catch (error) {
+                        console.error('Persistance de la réponse impossible:', error);
+                        this.showToast(`Erreur : ${error.message || 'Réponse non enregistrée'}`, 5000);
+                    } finally {
+                        this.currentStreamingMessage = '';
+                        this.currentStreamingReasoning = '';
+                        this.isStreaming = false;
+                        this.scrollToBottom();
                     }
-                    this.scrollToBottom();
                 }
             });
         },

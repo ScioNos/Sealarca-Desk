@@ -81,11 +81,13 @@ class SealarcaAPI {
         let fullText = '';
         let fullReasoning = '';
         let doneCalled = false;
+        let controller = null;
+        let requestTimeoutId = null;
 
-        const finish = (metadata = {}) => {
+        const finish = async (metadata = {}) => {
             if (doneCalled) return;
             doneCalled = true;
-            onDone(fullText, fullReasoning, metadata);
+            await onDone(fullText, fullReasoning, metadata);
         };
 
         try {
@@ -93,8 +95,10 @@ class SealarcaAPI {
             if (!model) throw new Error('Aucun modèle sélectionné.');
 
             this.abortCurrentRequest();
-            this.currentAbortController = new AbortController();
-            this.timeoutId = setTimeout(() => this.currentAbortController?.abort('timeout'), REQUEST_TIMEOUT_MS);
+            controller = new AbortController();
+            this.currentAbortController = controller;
+            requestTimeoutId = setTimeout(() => controller.abort('timeout'), REQUEST_TIMEOUT_MS);
+            this.timeoutId = requestTimeoutId;
 
             const input = [];
             for (const message of messages || []) {
@@ -119,7 +123,7 @@ class SealarcaAPI {
                     Accept: 'text/event-stream'
                 },
                 body: JSON.stringify(payload),
-                signal: this.currentAbortController.signal
+                signal: controller.signal
             }, { context: 'réponse', maxRetries: DEFAULT_RETRY_LIMIT });
 
             if (!response.ok) throw await this._createHttpError(response, 'réponse');
@@ -166,7 +170,7 @@ class SealarcaAPI {
                         fullReasoning += event.delta;
                         onChunk({ type: 'reasoning', chunk: event.delta, fullText, fullReasoning });
                     } else if (type === 'response.completed') {
-                        finish({ interrupted: false, response: event.response || null });
+                        await finish({ interrupted: false, response: event.response || null });
                         return;
                     } else if (type === 'error' || type === 'response.failed') {
                         const message = event.error?.message || event.response?.error?.message || event.message;
@@ -186,18 +190,20 @@ class SealarcaAPI {
                 }
             }
 
-            finish({ interrupted: false });
+            await finish({ interrupted: false });
         } catch (error) {
             if (error.name === 'AbortError') {
-                finish({ interrupted: true });
+                await finish({ interrupted: true });
             } else {
                 console.error('Erreur Responses API Sealarca:', error);
-                onError(error);
+                await onError(error);
             }
         } finally {
-            clearTimeout(this.timeoutId);
-            this.timeoutId = null;
-            this.currentAbortController = null;
+            clearTimeout(requestTimeoutId);
+            if (this.currentAbortController === controller) {
+                this.currentAbortController = null;
+                this.timeoutId = null;
+            }
         }
     }
 
@@ -280,9 +286,24 @@ class SealarcaAPI {
 
     _delay(milliseconds, signal) {
         return new Promise((resolve, reject) => {
-            if (signal?.aborted) { reject(new DOMException('Aborted', 'AbortError')); return; }
-            const timeout = setTimeout(resolve, Math.max(0, Number(milliseconds) || 0));
-            signal?.addEventListener('abort', () => { clearTimeout(timeout); reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
+            const abortError = () => new DOMException('Aborted', 'AbortError');
+            if (signal?.aborted) { reject(abortError()); return; }
+            let settled = false;
+            const cleanup = () => signal?.removeEventListener('abort', onAbort);
+            const onAbort = () => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timeout);
+                cleanup();
+                reject(abortError());
+            };
+            const timeout = setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                resolve();
+            }, Math.max(0, Number(milliseconds) || 0));
+            signal?.addEventListener('abort', onAbort, { once: true });
         });
     }
 

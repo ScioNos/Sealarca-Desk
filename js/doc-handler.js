@@ -39,6 +39,9 @@ class SealarcaDocHandler {
             default: parsed = await this._parseText(file, extension); break;
         }
 
+        if (!Array.isArray(parsed?.sourceMap) || parsed.sourceMap.length === 0) {
+            throw new Error('Aucun texte exploitable trouvé dans ce fichier.');
+        }
         const { markdown, sourceMap } = this._normalizeParsedDocument(parsed);
         if (!markdown) throw new Error('Aucun texte exploitable trouvé dans ce fichier.');
         if (markdown.length > this.limits.maxExtractedCharacters) {
@@ -158,7 +161,9 @@ class SealarcaDocHandler {
                 lastY = y;
             }
             if (currentLine.trim()) pageLines.push(currentLine.trim());
-            this._appendSection(result, `## Page ${pageNumber}\n\n${pageLines.join('\n')}`, { type: 'pdf-page', page: pageNumber }, `Page ${pageNumber}`);
+            if (pageLines.length) {
+                this._appendSection(result, `## Page ${pageNumber}\n\n${pageLines.join('\n')}`, { type: 'pdf-page', page: pageNumber }, `Page ${pageNumber}`);
+            }
         }
         return result;
     }
@@ -168,7 +173,7 @@ class SealarcaDocHandler {
         const zip = await window.JSZip.loadAsync(file);
         const documentXml = zip.file('word/document.xml');
         if (!documentXml) throw new Error('Fichier DOCX invalide (document.xml introuvable).');
-        const xmlDoc = new DOMParser().parseFromString(await documentXml.async('string'), 'application/xml');
+        const xmlDoc = this._parseXml(await documentXml.async('string'), 'DOCX');
         const result = { markdown: `# Document Word : ${file.name}\n\n`, sourceMap: [], metadata: {}, parser: 'docx-xml' };
         const body = xmlDoc.getElementsByTagName('w:body')[0];
         if (!body) return result;
@@ -210,7 +215,7 @@ class SealarcaDocHandler {
         const sharedStrings = [];
         const sharedFile = zip.file('xl/sharedStrings.xml');
         if (sharedFile) {
-            const sharedDoc = new DOMParser().parseFromString(await sharedFile.async('string'), 'application/xml');
+            const sharedDoc = this._parseXml(await sharedFile.async('string'), 'XLSX');
             for (const node of sharedDoc.getElementsByTagName('si')) {
                 sharedStrings.push(Array.from(node.getElementsByTagName('t')).map(text => text.textContent).join(''));
             }
@@ -221,10 +226,11 @@ class SealarcaDocHandler {
         const result = { markdown: `# Classeur Excel : ${file.name}\n\n`, sourceMap: [], metadata: { sheetCount: sheetFiles.length }, parser: 'xlsx-xml', warnings: [] };
         for (let index = 0; index < sheetFiles.length; index++) {
             const sheetName = names[index] || `Feuille ${index + 1}`;
-            const sheetDoc = new DOMParser().parseFromString(await zip.file(sheetFiles[index]).async('string'), 'application/xml');
+            const sheetDoc = this._parseXml(await zip.file(sheetFiles[index]).async('string'), 'XLSX');
             const rows = Array.from(sheetDoc.getElementsByTagName('row'));
             const usedRows = rows.slice(0, this.limits.maxTabularRowsPerSheet);
             const cellReferences = [];
+            let hasCellText = false;
             const markdownRows = usedRows.map((row, rowIndex) => {
                 const cells = Array.from(row.getElementsByTagName('c'));
                 cells.forEach(cell => { if (cell.getAttribute('r')) cellReferences.push(cell.getAttribute('r')); });
@@ -234,6 +240,7 @@ class SealarcaDocHandler {
                     let value = valueNode ? valueNode.textContent : '';
                     if (type === 's' && sharedStrings[Number(value)] !== undefined) value = sharedStrings[Number(value)];
                     if (type === 'inlineStr') value = Array.from(cell.getElementsByTagName('t')).map(item => item.textContent).join('');
+                    if (String(value).trim()) hasCellText = true;
                     return String(value).trim().replace(/\|/g, '\\|') || ' ';
                 });
                 const line = '| ' + values.join(' | ') + ' |';
@@ -243,10 +250,11 @@ class SealarcaDocHandler {
             const lastRow = usedRows[usedRows.length - 1]?.getAttribute('r') || firstRow;
             const range = cellReferences.length ? `${cellReferences[0]}:${cellReferences[cellReferences.length - 1]}` : null;
             if (rows.length > usedRows.length) result.warnings.push(`${sheetName}: extraction limitée aux ${usedRows.length} premières lignes sur ${rows.length}.`);
-            const body = markdownRows.length ? markdownRows.join('\n') : '*(Feuille vide)*';
-            this._appendSection(result, `## ${sheetName}\n\n${body}`, {
-                type: 'spreadsheet-range', sheet: sheetName, range, startRow: firstRow, endRow: lastRow, truncated: rows.length > usedRows.length
-            }, sheetName);
+            if (markdownRows.length && hasCellText) {
+                this._appendSection(result, `## ${sheetName}\n\n${markdownRows.join('\n')}`, {
+                    type: 'spreadsheet-range', sheet: sheetName, range, startRow: firstRow, endRow: lastRow, truncated: rows.length > usedRows.length
+                }, sheetName);
+            }
         }
         return result;
     }
@@ -254,7 +262,7 @@ class SealarcaDocHandler {
     async _xlsxSheetNames(zip) {
         const workbook = zip.file('xl/workbook.xml');
         if (!workbook) return [];
-        const doc = new DOMParser().parseFromString(await workbook.async('string'), 'application/xml');
+        const doc = this._parseXml(await workbook.async('string'), 'XLSX');
         return Array.from(doc.getElementsByTagName('sheet')).map((sheet, index) => sheet.getAttribute('name') || `Feuille ${index + 1}`);
     }
 
@@ -264,10 +272,12 @@ class SealarcaDocHandler {
         const slides = Object.keys(zip.files).filter(key => /^ppt\/slides\/slide\d+\.xml$/.test(key)).sort((a, b) => this._numberIn(a) - this._numberIn(b));
         const result = { markdown: `# Présentation PowerPoint : ${file.name}\n\n`, sourceMap: [], metadata: { slideCount: slides.length }, parser: 'pptx-xml' };
         for (let index = 0; index < slides.length; index++) {
-            const slideDoc = new DOMParser().parseFromString(await zip.file(slides[index]).async('string'), 'application/xml');
+            const slideDoc = this._parseXml(await zip.file(slides[index]).async('string'), 'PPTX');
             const texts = Array.from(slideDoc.getElementsByTagName('a:t')).map(node => node.textContent.trim()).filter(Boolean);
             const slideNumber = index + 1;
-            this._appendSection(result, `## Diapositive ${slideNumber}\n\n${texts.length ? texts.map(text => '- ' + text).join('\n') : '*(Sans texte)*'}`, { type: 'presentation-slide', slide: slideNumber }, `Diapositive ${slideNumber}`);
+            if (texts.length) {
+                this._appendSection(result, `## Diapositive ${slideNumber}\n\n${texts.map(text => '- ' + text).join('\n')}`, { type: 'presentation-slide', slide: slideNumber }, `Diapositive ${slideNumber}`);
+            }
         }
         return result;
     }
@@ -277,7 +287,7 @@ class SealarcaDocHandler {
         const zip = await window.JSZip.loadAsync(file);
         const content = zip.file('content.xml');
         if (!content) throw new Error('Fichier OpenDocument invalide (content.xml introuvable).');
-        const doc = new DOMParser().parseFromString(await content.async('string'), 'application/xml');
+        const doc = this._parseXml(await content.async('string'), 'OpenDocument');
         const result = { markdown: `# Document OpenDocument : ${file.name}\n\n`, sourceMap: [], metadata: {}, parser: 'odf-xml' };
         let paragraph = 0;
         for (const node of doc.getElementsByTagName('text:p')) {
@@ -292,7 +302,7 @@ class SealarcaDocHandler {
 
     async _parseCsv(file) {
         const raw = await this._readAsText(file);
-        const rows = raw.split(/\r?\n/).filter(line => line.trim());
+        const rows = raw.split(/\r?\n/).filter(line => line.split(/[;,]/).some(cell => cell.trim().replace(/^"|"$/g, '')));
         const delimiter = rows[0]?.includes(';') ? ';' : ',';
         const usedRows = rows.slice(0, this.limits.maxTabularRowsPerSheet);
         const table = usedRows.map((row, index) => {
@@ -308,6 +318,7 @@ class SealarcaDocHandler {
 
     async _parseText(file, extension) {
         const raw = await this._readAsText(file);
+        if (!String(raw || '').trim()) return { markdown: '', sourceMap: [], metadata: { lineCount: 0 }, parser: extension === 'md' ? 'markdown-pass-through' : 'plain-text' };
         const markdown = extension === 'md' ? raw : `# ${file.name}\n\n${raw}`;
         const lineCount = raw.split(/\r?\n/).length;
         return {
@@ -320,6 +331,11 @@ class SealarcaDocHandler {
 
     _extension(name) { return String(name || '').includes('.') ? String(name).split('.').pop().toLowerCase() : ''; }
     _numberIn(value) { return Number(String(value).match(/(\d+)/)?.[1] || 0); }
+    _parseXml(value, format) {
+        const document = new DOMParser().parseFromString(String(value || ''), 'application/xml');
+        if (document.getElementsByTagName('parsererror').length > 0) throw new Error(`Fichier ${format} corrompu ou XML invalide.`);
+        return document;
+    }
     _readAsText(file) { return file.text ? file.text() : new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = () => reject(reader.error); reader.readAsText(file); }); }
     async _sha256(file) {
         if (!window.crypto?.subtle) return null;

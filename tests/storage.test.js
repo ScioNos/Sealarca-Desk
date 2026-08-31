@@ -37,6 +37,17 @@ test('la normalisation Markdown recalcule des offsets sourceMap exacts', () => {
     assert.equal(Object.hasOwn(source, '_sourceMarkdown'), false);
 });
 
+test('une extraction textuelle vide est refusée avant la persistance', async () => {
+    const vm = require('node:vm');
+    const context = { window: {}, console };
+    vm.createContext(context);
+    vm.runInContext(read('js/doc-handler.js'), context, { filename: 'doc-handler.js' });
+    const handler = context.window.sealarcaDocHandler;
+    const parsed = await handler._parseText({ text: async () => ' \n\n ' }, 'txt');
+    assert.equal(parsed.markdown, '');
+    assert.equal(parsed.sourceMap.length, 0);
+});
+
 test('les documents persistants gardent Markdown, original, hash et sourceMap', () => {
     const handler = read('js/doc-handler.js');
     const db = read('js/db.js');
@@ -55,6 +66,8 @@ test('les documents persistants gardent Markdown, original, hash et sourceMap', 
     assert.match(db, /sourceMapVersion/);
     assert.match(db, /chunks: \{ status: 'not_generated', source: 'markdown' \}/);
     assert.match(db, /derivedFrom: 'markdown'/);
+    assert.match(db, /tx\.onabort = \(\) => reject\(tx\.error \|\| new Error\('Suppression du document annulée\.'\)\)/);
+    assert.match(db, /this\.initPromise = initPromise\.catch/);
 });
 
 test('le contexte IA sépare historique et documents sélectionnés', () => {
@@ -92,18 +105,18 @@ test('P1 persiste fiches, jobs, reprise et export sans remplacer le Markdown can
     assert.match(db, /\['pending', 'running', 'completed', 'failed', 'cancelled'\]/);
     assert.match(app, /exportFolderOverviewMarkdown\(\)/);
     assert.match(app, /link\.download = 'index\.md'/);
-    assert.match(html, /IndexedDB/);
+    assert.match(html, /x-text="documentsOverviewDescription"/);
     assert.doesNotMatch(app, /saveDocument\([^)]*index\.md/);
 });
 
 test('l’interface P1 expose vue dossier, recherche, queue et modes de contexte', () => {
     const html = read('index.html');
-    assert.match(html, /Vue d’ensemble/);
-    assert.match(html, /Recherche locale/);
-    assert.match(html, /Queue locale/);
-    assert.match(html, /Automatique local/);
-    assert.match(html, /Générer les fiches manquantes/);
-    assert.match(html, /js\/p1\.js\?v=1\.0\.0/);
+    assert.match(html, /x-text="documentsOverviewTab"/);
+    assert.match(html, /x-text="documentsSearchTab"/);
+    assert.match(html, /x-text="documentsQueueTitle"/);
+    assert.match(html, /x-text="documentsAutomaticMode"/);
+    assert.match(html, /x-text="documentsGenerateMissing"/);
+    assert.match(html, /js\/p1\.js\?v=1\.0\.1/);
 });
 
 test('le projet est source available sous PolyForm Perimeter 1.0.1', () => {
@@ -121,7 +134,7 @@ test('le projet est source available sous PolyForm Perimeter 1.0.1', () => {
 });
 
 
-test('la première publication officielle utilise la version 1.0.0', () => {
+test('la release corrective utilise la version 1.0.1 et conserve l’historique 1.0.0', () => {
     const pkg = JSON.parse(read('package.json'));
     const changelog = read('CHANGELOG.md');
     const notes = read('RELEASE_NOTES.md');
@@ -129,15 +142,16 @@ test('la première publication officielle utilise la version 1.0.0', () => {
     const buildScript = read('scripts/build-release.ps1');
     const forbiddenDevelopmentVersion = ['1', '1', '0'].join('.');
 
-    assert.equal(pkg.version, '1.0.0');
+    assert.equal(pkg.version, '1.0.1');
     assert.ok(changelog.includes('## [1.0.0] - 2026-08-29')); 
+    assert.ok(changelog.includes('## [1.0.1] - 2026-08-31'));
     assert.match(changelog, /First Official Release/i);
     assert.doesNotMatch(changelog, /changed from MIT/i);
-    assert.ok(notes.startsWith('# Sealarca Desk v1.0.0')); 
-    assert.match(notes, /first official public release/i);
-    assert.ok(notes.includes('Sealarca-Desk-v1.0.0.zip')); 
-    assert.ok(buildScript.includes("[string]$Version = '1.0.0'")); 
-    assert.ok(html.includes('js/app.js?v=1.0.0')); 
+    assert.ok(notes.startsWith('# Sealarca Desk v1.0.1'));
+    assert.match(notes, /Fixes in v1.0.1/i);
+    assert.ok(notes.includes('Sealarca-Desk-v1.0.1.zip'));
+    assert.ok(buildScript.includes("[string]$Version = '1.0.1'"));
+    assert.ok(html.includes('js/app.js?v=1.0.1'));
 
     for (const contents of [changelog, notes, html, buildScript, JSON.stringify(pkg)]) {
         assert.equal(contents.includes(forbiddenDevelopmentVersion), false);

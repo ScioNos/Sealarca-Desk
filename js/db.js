@@ -1,7 +1,7 @@
 /**
  * Sealarca-Desk — Moteur de persistance locale IndexedDB
- * Base de données locale sécurisée (sealarca_desk_db).
- * Aucune donnée ne quitte le poste client.
+ * Base de données locale (sealarca_desk_db).
+ * Les données persistées ici restent locales; les flux API sont gérés séparément.
  */
 
 const DB_NAME = 'sealarca_desk_db';
@@ -18,7 +18,7 @@ class SealarcaDB {
         if (this.db) return this.db;
         if (this.initPromise) return this.initPromise;
 
-        this.initPromise = new Promise((resolve, reject) => {
+        const initPromise = new Promise((resolve, reject) => {
             const request = indexedDB.open(DB_NAME, DB_VERSION);
 
             request.onupgradeneeded = (event) => {
@@ -125,6 +125,8 @@ class SealarcaDB {
                     await this._initDefaultRoles();
                     resolve(this.db);
                 } catch (error) {
+                    this.db.close();
+                    this.db = null;
                     reject(error);
                 }
             };
@@ -136,6 +138,10 @@ class SealarcaDB {
             request.onblocked = () => reject(new Error('La migration IndexedDB est bloquée par un autre onglet Sealarca-Desk.'));
         });
 
+        this.initPromise = initPromise.catch(error => {
+            this.initPromise = null;
+            throw error;
+        });
         return this.initPromise;
     }
 
@@ -144,6 +150,7 @@ class SealarcaDB {
             const tx = this.db.transaction(storeName, mode);
             const store = tx.objectStore(storeName);
             let request;
+            let requestResult;
             try {
                 request = operation(store, tx);
             } catch (error) {
@@ -151,11 +158,10 @@ class SealarcaDB {
                 return;
             }
             if (request) {
-                request.onsuccess = () => resolve(request.result);
+                request.onsuccess = () => { requestResult = request.result; };
                 request.onerror = () => reject(request.error);
-            } else {
-                tx.oncomplete = () => resolve(true);
             }
+            tx.oncomplete = () => resolve(request ? requestResult : true);
             tx.onerror = () => reject(tx.error);
             tx.onabort = () => reject(tx.error || new Error('Transaction IndexedDB annulée.'));
         });
@@ -267,8 +273,11 @@ Ton rôle est de synthétiser des dossiers volumineux en notes de synthèse conc
 
     async deleteFolder(id) {
         await this.init();
+        const folders = await this.getFolders();
+        if (id === DEFAULT_FOLDER_ID && folders.length <= 1) throw new Error('Au moins un dossier doit être conservé.');
         const conversations = await this.getConversations(id);
         const documents = await this.getDocuments(id);
+        const processingJobs = await this.getProcessingJobs(id);
         return new Promise((resolve, reject) => {
             const tx = this.db.transaction(['folders', 'conversations', 'messages', 'documents', 'documentChunks', 'documentProfiles', 'processingJobs'], 'readwrite');
             tx.objectStore('folders').delete(id);
@@ -285,7 +294,9 @@ Ton rôle est de synthétiser des dossiers volumineux en notes de synthèse conc
             const docStore = tx.objectStore('documents');
             const chunkIndex = tx.objectStore('documentChunks').index('documentId');
             const profileStore = tx.objectStore('documentProfiles');
+            const jobStore = tx.objectStore('processingJobs');
             const jobIndex = tx.objectStore('processingJobs').index('documentId');
+            processingJobs.forEach(job => jobStore.delete(job.id));
             documents.forEach(document => {
                 docStore.delete(document.id);
                 profileStore.delete(document.id);
@@ -344,6 +355,7 @@ Ton rôle est de synthétiser des dossiers volumineux en notes de synthèse conc
             };
             tx.oncomplete = () => resolve(true);
             tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(tx.error || new Error('Suppression de la consultation annulée.'));
         });
     }
 
@@ -425,6 +437,7 @@ Ton rôle est de synthétiser des dossiers volumineux en notes de synthèse conc
             };
             tx.oncomplete = () => resolve(true);
             tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(tx.error || new Error('Suppression du document annulée.'));
         });
     }
 

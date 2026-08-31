@@ -1,8 +1,8 @@
-# Sealarca Desk v1.0.0
+# Sealarca Desk v1.0.1
 
-Release date: **August 29, 2026**.
+Release date: **August 31, 2026**.
 
-Sealarca Desk v1.0.0 is the first official public release and a source-available local browser client for Sealarca Vault. Runtime assets, document parsing, indexing and browser storage are local; model discovery, chat and document-profile generation require access to `https://sealarca.ch/v1`.
+Sealarca Desk v1.0.1 is a corrective release for the source-available local browser client for Sealarca Vault. Runtime assets, document parsing, indexing and browser storage are local; model discovery, chat and document-profile generation require access to `https://sealarca.ch/v1`.
 
 ## Highlights
 
@@ -16,6 +16,13 @@ Sealarca Desk v1.0.0 is the first official public release and a source-available
 - The API key remains in browser `sessionStorage`; application data uses IndexedDB schema version 3.
 - The interface supports French, German, Italian, English and Spanish, four professional roles, and light/dark themes.
 
+## Fixes in v1.0.1
+
+- Keeps an existing session key ahead of stale legacy IndexedDB data and requires an explicit discovered-model choice.
+- Improves first-run configuration, model errors, keyboard navigation, modal focus management, ARIA states and reduced-motion behavior.
+- Aligns the file picker with all supported formats, rejects empty or malformed documents, and improves responsive behavior at narrow widths.
+- Adds localized document-workspace labels and safer streaming/IndexedDB cleanup.
+
 ## Operational limits
 
 - 20 MiB maximum per document.
@@ -27,16 +34,16 @@ Sealarca Desk v1.0.0 is the first official public release and a source-available
 
 ## Download
 
-Download `Sealarca-Desk-v1.0.0.zip`, extract it, then open `Sealarca-Desk/index.html` in a modern browser.
+Download `Sealarca-Desk-v1.0.1.zip`, extract it, then open `Sealarca-Desk/index.html` in a modern browser.
 
 The Sealarca API must allow requests from the local `file://` origin. If local-file requests are blocked by browser or organization policy, serve the extracted directory from an approved local static server.
 
 ## Integrity verification
 
-Compare the archive SHA-256 with `Sealarca-Desk-v1.0.0.sha256`.
+Compare the archive SHA-256 with `Sealarca-Desk-v1.0.1.sha256`.
 
 ```powershell
-Get-FileHash .\Sealarca-Desk-v1.0.0.zip -Algorithm SHA256
+Get-FileHash .\Sealarca-Desk-v1.0.1.zip -Algorithm SHA256
 ```
 
 ## Security note

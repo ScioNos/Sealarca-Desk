@@ -7,7 +7,7 @@
     
     <!-- Sécurité CSP stricte : Aucun script externe, requêtes autorisées uniquement vers Sealarca Vault et local -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' file: blob: data:; script-src 'self' file:; style-src 'self' file: 'unsafe-inline'; img-src 'self' file: data: blob:; font-src 'self' file: data:; connect-src 'self' file: blob: data: https://sealarca.ch http://localhost:* http://127.0.0.1:*; worker-src 'self' file: blob:; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'none';">
-    <script src="js/boot-theme.js?v=1.0.0"></script>
+    <script src="js/boot-theme.js?v=1.0.1"></script>
 
     <!-- Feuilles de style officielles Sealarca -->
     <link rel="stylesheet" href="css/theme.css">
@@ -17,19 +17,20 @@
 <body>
 
     <!-- Application Shell réactive Alpine.js -->
-    <div class="app-shell" x-data="sealarcaApp" @keydown.window.escape="closeOverlays">
+    <div class="app-shell" x-data="sealarcaApp" @keydown.window="handleWindowKeydown">
 
         <!-- =================================================================
              1. Barre Latérale (Sidebar)
              ================================================================= -->
-        <aside class="sidebar" :class="sidebarClass">
+        <aside class="sidebar" :class="sidebarClass" :inert="hasAnyModal">
             <!-- En-tête -->
             <div class="sidebar-header">
-                <a href="#" class="sidebar-brand" @click.prevent="newConversation">
+                <button type="button" class="sidebar-brand" @click="newConversation" :aria-label="appNewChat">
                     <img src="images/logo-light.png" alt="Sealarca" class="sidebar-logo theme-logo-light">
                     <img src="images/logo.png" alt="Sealarca" class="sidebar-logo theme-logo-dark">
                     <span class="sidebar-badge" x-text="appDesk"></span>
-                </a>
+                </button>
+                <button type="button" class="sidebar-mobile-close" @click="toggleSidebar" :aria-label="appClose" :title="appClose">&times;</button>
             </div>
 
 
@@ -42,13 +43,13 @@
                 <div class="folder-list">
                     <template x-for="folder in folders" :key="folder.id">
                         <div class="folder-item" :class="folder.rowClass">
-                            <button type="button" class="folder-select" @click="folder.select">
+                            <button type="button" class="folder-select" @click="folder.select" :aria-current="folder.isActive ? 'page' : null">
                                 <span aria-hidden="true">▣</span>
                                 <span x-text="folder.name"></span>
                             </button>
                             <div class="folder-actions">
-                                <button type="button" class="conv-action-btn" @click="folder.edit" title="Modifier">✎</button>
-                                <button type="button" class="conv-action-btn" @click="folder.remove" :title="appDelete">×</button>
+                                <button type="button" class="conv-action-btn" @click="folder.edit" :title="appEdit" :aria-label="appEdit">✎</button>
+                                <button type="button" class="conv-action-btn" @click="folder.remove" :title="appDelete" :aria-label="appDelete">×</button>
                             </div>
                         </div>
                     </template>
@@ -64,17 +65,19 @@
             <div class="sidebar-search">
                 <div class="search-input-wrapper">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                    <input type="text" class="sidebar-search-input" :placeholder="appSearchPlaceholder" :value="searchQuery" @input="updateSearchQuery">
+                    <input type="text" class="sidebar-search-input" :placeholder="appSearchPlaceholder" :aria-label="appSearchPlaceholder" :value="searchQuery" @input="updateSearchQuery">
                 </div>
             </div>
 
             <!-- Liste des Conversations -->
             <div class="sidebar-conv-list">
                 <template x-for="conv in filteredConversations" :key="conv.id">
-                    <div class="conv-item" :class="conv.rowClass" @click="conv.select">
-                        <span class="conv-item-title" x-text="conv.title"></span>
+                    <div class="conv-item" :class="conv.rowClass">
+                        <button type="button" class="conv-select" @click="conv.select" :aria-current="conv.isActive ? 'page' : null">
+                            <span class="conv-item-title" x-text="conv.title"></span>
+                        </button>
                         <div class="conv-item-actions">
-                            <button type="button" class="conv-action-btn" :title="appDelete" @click.stop="conv.remove">
+                            <button type="button" class="conv-action-btn" :title="appDelete" :aria-label="appDelete" @click="conv.remove">
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path></svg>
                             </button>
                         </div>
@@ -110,7 +113,7 @@
         <!-- =================================================================
              2. Zone Principale (Chat View)
              ================================================================= -->
-        <main class="main-view">
+        <main class="main-view" :inert="hasAnyModal">
             <!-- En-tête supérieur -->
             <header class="chat-header">
                 <div class="header-left">
@@ -125,7 +128,9 @@
 
                     <!-- Sélecteur de Modèle du Vault -->
                     <div style="position: relative;">
-                        <select class="model-picker" :value="selectedModel" @change="updateSelectedModel" :disabled="modelsDisabled">
+                        <label class="sr-only" for="header-model-picker" x-text="modelPickerLabel"></label>
+                        <select id="header-model-picker" class="model-picker" :value="selectedModel" @change="updateSelectedModel" :disabled="modelsDisabled" :aria-label="modelPickerLabel">
+                            <option value="" x-text="modelChoosePrompt"></option>
                             <template x-for="m in models" :key="m.id">
                                 <option :value="m.id" x-text="m.name"></option>
                             </template>
@@ -178,18 +183,18 @@
 
                             <!-- Cartes de suggestions de prompts -->
                             <div class="prompt-suggestions">
-                                <div class="suggestion-card" @click="useSuggestion1">
+                                <button type="button" class="suggestion-card" @click="useSuggestion1">
                                     <div class="suggestion-card-title" x-text="emptyCard1Title"></div>
                                     <div class="suggestion-card-subtitle" x-text="emptyCard1Desc"></div>
-                                </div>
-                                <div class="suggestion-card" @click="useSuggestion2">
+                                </button>
+                                <button type="button" class="suggestion-card" @click="useSuggestion2">
                                     <div class="suggestion-card-title" x-text="emptyCard2Title"></div>
                                     <div class="suggestion-card-subtitle" x-text="emptyCard2Desc"></div>
-                                </div>
-                                <div class="suggestion-card" @click="useSuggestion3">
+                                </button>
+                                <button type="button" class="suggestion-card" @click="useSuggestion3">
                                     <div class="suggestion-card-title" x-text="emptyCard3Title"></div>
                                     <div class="suggestion-card-subtitle" x-text="emptyCard3Desc"></div>
-                                </div>
+                                </button>
                             </div>
                         </div>
                     </template>
@@ -310,6 +315,7 @@
                     <!-- Zone de texte auto-extensible -->
                     <textarea id="chat-textarea" class="chat-textarea" rows="1"
                               :placeholder="inputPlaceholder"
+                              :aria-label="inputPlaceholder"
                               :value="inputPrompt"
                               @keydown="handlePromptKeydown"
                               @input="updatePrompt" @keyup="resizePrompt"></textarea>
@@ -319,7 +325,7 @@
                         <div class="toolbar-left">
                             <!-- Input de fichier caché -->
                             <input type="file" id="file-input-hidden" multiple style="display: none;"
-                                   accept=".pdf,.docx,.xlsx,.pptx,.odt,.ods,.csv,.txt,.md,.json,.rtf"
+                                   accept=".pdf,.docx,.xlsx,.pptx,.odt,.ods,.csv,.txt,.md,.json,.rtf,.log,.xml"
                                    @change="handleFileInput">
 
                             <button type="button" class="toolbar-btn" @click="openFilePicker" :title="inputAttachDoc">
@@ -354,34 +360,42 @@
         <!-- =================================================================
              4. Modale de Configuration & Clé API
              ================================================================= -->
-        <div class="modal-overlay" x-cloak x-show="isSettingsOpen" x-transition>
-            <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="settings-title" @click.away="closeSettings">
+        <div class="modal-overlay" x-cloak x-show="isSettingsOpen" x-transition :aria-hidden="!isSettingsOpen" :inert="hasAnyModal && !isSettingsOpen">
+            <div class="modal-card" data-modal="settings" role="dialog" aria-modal="true" aria-labelledby="settings-title" aria-describedby="settings-description" @click.away="closeSettings">
                 <div class="modal-header">
                     <h2 class="modal-title" id="settings-title" x-text="settingsTitle"></h2>
-                    <button type="button" class="modal-close" @click="closeSettings" x-show="hasConfiguredApi" aria-label="Fermer">&times;</button>
+                    <button type="button" class="modal-close" @click="closeSettings" x-show="hasConfiguredApi" :aria-label="settingsCloseLabel">&times;</button>
                 </div>
 
                 <div class="modal-body">
-                    <p style="font-size: 13px; color: var(--sealarca-ink-muted); line-height: 1.5;" x-text="settingsDesc"></p>
+                    <p id="settings-description" style="font-size: 13px; color: var(--sealarca-ink-muted); line-height: 1.5;" x-text="settingsDesc"></p>
+                    <a class="external-help-link" href="https://sealarca.ch" target="_blank" rel="noopener noreferrer" x-text="settingsGetKeyLabel"></a>
 
                     <!-- Alerte Erreur -->
                     <template x-if="apiError">
-                        <div style="padding: 10px 12px; border-radius: var(--radius-sm); background-color: var(--sealarca-danger-light); color: var(--sealarca-danger); font-size: 12px;" x-text="apiError"></div>
+                        <div role="alert" aria-live="assertive" style="padding: 10px 12px; border-radius: var(--radius-sm); background-color: var(--sealarca-danger-light); color: var(--sealarca-danger); font-size: 12px;" x-text="apiError"></div>
                     </template>
 
                     <div class="form-group">
                         <label class="form-label" for="api-key-input" x-text="settingsApiKeyLabel"></label>
                         <div class="api-key-field-row">
                             <input :type="apiKeyInputType" id="api-key-input" class="form-input" placeholder="sk-sealarca-..." :value="apiKey" @input="updateApiKey"
-                                   autocomplete="off" autocapitalize="off" spellcheck="false">
+                                   autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="api-key-hint">
                             <button type="button" class="btn btn-secondary api-key-toggle" @click="toggleApiKeyVisibility" :aria-label="settingsToggleKeyLabel" :title="settingsToggleKeyLabel">👁</button>
                         </div>
-                        <span class="form-hint" x-text="settingsApiKeyHint"></span>
+                        <span class="form-hint" id="api-key-hint" x-text="settingsApiKeyHint"></span>
                     </div>
 
                     <!-- Liste des modèles découverts -->
                     <div class="form-group" x-show="hasModels">
-                        <label class="form-label" x-text="settingsModelsTitle"></label>
+                        <span class="form-label" id="settings-models-label" x-text="settingsModelsTitle"></span>
+                        <label class="sr-only" for="settings-model-picker" x-text="modelPickerLabel"></label>
+                        <select id="settings-model-picker" class="form-select" :value="selectedModel" @change="updateSelectedModel" aria-labelledby="settings-models-label" :aria-label="modelPickerLabel">
+                            <option value="" x-text="modelChoosePrompt"></option>
+                            <template x-for="m in models" :key="m.id">
+                                <option :value="m.id" x-text="m.name"></option>
+                            </template>
+                        </select>
                         <div style="max-height: 140px; overflow-y: auto; border: 1px solid var(--sealarca-border); border-radius: var(--radius-sm); padding: 6px;">
                             <template x-for="m in models" :key="m.id">
                                 <div style="padding: 6px 8px; font-size: 12px; display: flex; justify-content: space-between; border-bottom: 1px solid var(--sealarca-border-subtle);">
@@ -408,21 +422,21 @@
         <!-- =================================================================
              5. Modale de Gestion des Rôles Métiers
              ================================================================= -->
-        <div class="modal-overlay" x-cloak x-show="isRolesOpen" x-transition>
-            <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="roles-title" @click.away="closeRoles">
+        <div class="modal-overlay" x-cloak x-show="isRolesOpen" x-transition :aria-hidden="!isRolesOpen" :inert="hasAnyModal && !isRolesOpen">
+            <div class="modal-card" data-modal="roles" role="dialog" aria-modal="true" aria-labelledby="roles-title" aria-describedby="roles-description" @click.away="closeRoles">
                 <div class="modal-header">
                     <h2 class="modal-title" id="roles-title" x-text="rolesTitle"></h2>
-                    <button type="button" class="modal-close" @click="closeRoles" aria-label="Fermer">&times;</button>
+                    <button type="button" class="modal-close" @click="closeRoles" :aria-label="rolesCloseLabel">&times;</button>
                 </div>
 
                 <div class="modal-body">
-                    <p style="font-size: 13px; color: var(--sealarca-ink-muted); line-height: 1.5;" x-text="rolesDesc"></p>
+                    <p id="roles-description" style="font-size: 13px; color: var(--sealarca-ink-muted); line-height: 1.5;" x-text="rolesDesc"></p>
 
                     <div style="display: flex; flex-direction: column; gap: 10px;">
                         <template x-for="role in roles" :key="role.id">
-                            <div style="padding: 12px; border: 1px solid var(--sealarca-border); border-radius: var(--radius-md); cursor: pointer; transition: all 0.15s ease;"
+                            <button type="button" class="role-card"
                                  :style="role.cardStyle"
-                                 @click="role.select">
+                                 @click="role.select" :aria-pressed="role.isSelected">
                                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
                                     <div style="font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 8px;">
                                         <span x-text="role.icon"></span>
@@ -433,7 +447,7 @@
                                     </template>
                                 </div>
                                 <p style="font-size: 12px; color: var(--sealarca-ink-muted); line-height: 1.4;" x-text="role.description"></p>
-                            </div>
+                            </button>
                         </template>
                     </div>
                 </div>
@@ -446,44 +460,44 @@
 
 
         <!-- Espace documentaire du dossier -->
-        <div class="modal-overlay" x-cloak x-show="isDocumentsOpen" x-transition>
-            <div class="modal-card modal-card-wide folder-workspace" role="dialog" aria-modal="true" aria-labelledby="documents-title" @click.away="closeDocuments">
+        <div class="modal-overlay" x-cloak x-show="isDocumentsOpen" x-transition :aria-hidden="!isDocumentsOpen" :inert="hasAnyModal && !isDocumentsOpen">
+            <div class="modal-card modal-card-wide folder-workspace" data-modal="documents" role="dialog" aria-modal="true" aria-labelledby="documents-title" aria-describedby="documents-description" @click.away="closeDocuments">
                 <div class="modal-header folder-workspace-header">
                     <div>
-                        <span class="workspace-kicker">DOSSIER ACTIF</span>
+                        <span class="workspace-kicker" x-text="documentsWorkspaceKicker"></span>
                         <h2 class="modal-title" id="documents-title" x-text="activeFolderName"></h2>
-                        <p class="modal-subtitle">Vue d’ensemble, recherche locale et traitements documentaires</p>
+                        <p class="modal-subtitle" id="documents-description" x-text="documentsWorkspaceSubtitle"></p>
                     </div>
-                    <button type="button" class="modal-close" @click="closeDocuments" aria-label="Fermer">&times;</button>
+                    <button type="button" class="modal-close" @click="closeDocuments" :aria-label="documentsCloseLabel">&times;</button>
                 </div>
                 <div class="workspace-tabs" role="tablist" aria-label="Espace documentaire">
-                    <button type="button" class="workspace-tab" :class="overviewTabClass" @click="openOverviewTab">Vue d’ensemble</button>
-                    <button type="button" class="workspace-tab" :class="libraryTabClass" @click="openLibraryTab">Documents</button>
-                    <button type="button" class="workspace-tab" :class="searchTabClass" @click="openSearchTab">Recherche locale</button>
-                    <button type="button" class="workspace-tab" :class="jobsTabClass" @click="openJobsTab">Traitements</button>
+                    <button type="button" id="overview-tab" class="workspace-tab" :class="overviewTabClass" role="tab" aria-controls="overview-panel" :aria-selected="isOverviewTab" @click="openOverviewTab" x-text="documentsOverviewTab"></button>
+                    <button type="button" id="library-tab" class="workspace-tab" :class="libraryTabClass" role="tab" aria-controls="library-panel" :aria-selected="isLibraryTab" @click="openLibraryTab" x-text="documentsLibraryTab"></button>
+                    <button type="button" id="search-tab" class="workspace-tab" :class="searchTabClass" role="tab" aria-controls="search-panel" :aria-selected="isSearchTab" @click="openSearchTab" x-text="documentsSearchTab"></button>
+                    <button type="button" id="jobs-tab" class="workspace-tab" :class="jobsTabClass" role="tab" aria-controls="jobs-panel" :aria-selected="isJobsTab" @click="openJobsTab" x-text="documentsJobsTab"></button>
                 </div>
 
                 <div class="modal-body workspace-body">
-                    <section x-show="isOverviewTab" class="overview-panel">
+                    <section id="overview-panel" x-show="isOverviewTab" class="overview-panel" role="tabpanel" aria-labelledby="overview-tab" :aria-hidden="!isOverviewTab" tabindex="0">
                         <div class="overview-commandbar">
                             <div>
-                                <h3>Registre du dossier</h3>
-                                <p>Cette vue est calculée depuis les documents et fiches conservés dans IndexedDB.</p>
+                                <h3 x-text="documentsOverviewTitle"></h3>
+                                <p x-text="documentsOverviewDescription"></p>
                             </div>
                             <div class="overview-actions">
-                                <button type="button" class="btn btn-secondary" @click="exportFolderOverviewMarkdown">Exporter index.md</button>
-                                <button type="button" class="btn btn-primary" @click="queueAllDocumentProfiles">Générer les fiches manquantes</button>
+                                <button type="button" class="btn btn-secondary" @click="exportFolderOverviewMarkdown" x-text="documentsExportOverview"></button>
+                                <button type="button" class="btn btn-primary" @click="queueAllDocumentProfiles" x-text="documentsGenerateMissing"></button>
                             </div>
                         </div>
                         <div class="overview-stats">
-                            <div class="overview-stat"><span>Documents</span><strong x-text="folderOverview.documentCount"></strong></div>
-                            <div class="overview-stat"><span>Volume connu</span><strong x-text="folderOverviewPagesLabel"></strong></div>
-                            <div class="overview-stat"><span>Fiches disponibles</span><strong x-text="folderOverviewProfilesLabel"></strong></div>
+                            <div class="overview-stat"><span x-text="documentsDocumentStat"></span><strong x-text="folderOverview.documentCount"></strong></div>
+                            <div class="overview-stat"><span x-text="documentsVolumeStat"></span><strong x-text="folderOverviewPagesLabel"></strong></div>
+                            <div class="overview-stat"><span x-text="documentsProfilesStat"></span><strong x-text="folderOverviewProfilesLabel"></strong></div>
                         </div>
                         <div class="overview-grid">
                             <article class="overview-section overview-documents">
-                                <div class="overview-section-title"><span>Documents</span><small x-text="folderOverview.documentCount"></small></div>
-                                <div class="overview-empty" x-show="hasNoDocuments">Ajoutez un document pour constituer le dossier.</div>
+                                <div class="overview-section-title"><span x-text="documentsSectionLabel"></span><small x-text="folderOverview.documentCount"></small></div>
+                                <div class="overview-empty" x-show="hasNoDocuments" x-text="documentsOverviewEmpty"></div>
                                 <div class="overview-document-list" x-show="hasDocuments">
                                     <template x-for="doc in documents" :key="doc.id">
                                         <button type="button" class="overview-document" @click="doc.preview">
@@ -495,21 +509,21 @@
                                 </div>
                             </article>
                             <article class="overview-section">
-                                <div class="overview-section-title"><span>Personnes / organisations</span></div>
+                                <div class="overview-section-title"><span x-text="documentsPeopleOrganizations"></span></div>
                                 <div class="entity-cloud">
                                     <template x-for="person in folderOverview.people" :key="person"><span class="entity-chip person" x-text="person"></span></template>
                                     <template x-for="organization in folderOverview.organizations" :key="organization"><span class="entity-chip organization" x-text="organization"></span></template>
                                 </div>
-                                <div class="overview-empty" x-show="hasNoOverviewEntities">Les entités apparaîtront après génération des fiches.</div>
+                                <div class="overview-empty" x-show="hasNoOverviewEntities" x-text="documentsOverviewEntitiesEmpty"></div>
                             </article>
                             <article class="overview-section">
-                                <div class="overview-section-title"><span>Dates principales</span></div>
+                                <div class="overview-section-title"><span x-text="documentsDatesSection"></span></div>
                                 <ul class="overview-fact-list">
                                     <template x-for="item in folderOverview.dates" :key="item.id"><li><button type="button" class="overview-date-link" @click="item.open"><strong x-text="item.date"></strong><span x-text="item.label"></span><small x-text="item.referenceLabel"></small></button></li></template>
                                 </ul>
                             </article>
                             <article class="overview-section">
-                                <div class="overview-section-title"><span>Éléments importants</span></div>
+                                <div class="overview-section-title"><span x-text="documentsItemsSection"></span></div>
                                 <div class="overview-fact-list">
                                     <template x-for="item in folderOverview.items" :key="item.id">
                                         <button type="button" class="important-item" @click="item.open"><strong x-text="item.label"></strong><span x-text="item.details"></span><small x-text="item.referenceLabel"></small></button>
@@ -519,16 +533,16 @@
                         </div>
                     </section>
 
-                    <section x-show="isLibraryTab" class="document-library">
+                    <section id="library-panel" x-show="isLibraryTab" class="document-library" role="tabpanel" aria-labelledby="library-tab" :aria-hidden="!isLibraryTab" tabindex="0">
                         <div class="document-library-toolbar library-toolbar-stacked">
                             <div>
-                                <strong>Contexte de la prochaine demande</strong>
-                                <div class="context-mode-switch" role="group" aria-label="Mode de sélection du contexte">
-                                    <button type="button" :class="manualContextClass" @click="useManualContext">Manuel</button>
-                                    <button type="button" :class="automaticContextClass" @click="useAutomaticContext">Automatique local</button>
+                                <strong x-text="documentsContextTitle"></strong>
+                                <div class="context-mode-switch" role="radiogroup" :aria-label="documentsContextTitle">
+                                    <button type="button" role="radio" :class="manualContextClass" :aria-checked="isManualContext" @click="useManualContext" x-text="documentsManualMode"></button>
+                                    <button type="button" role="radio" :class="automaticContextClass" :aria-checked="isAutomaticContext" @click="useAutomaticContext" x-text="documentsAutomaticMode"></button>
                                 </div>
                                 <p x-show="isManualContext" x-text="documentsSelectionHint"></p>
-                                <p x-show="isAutomaticContext">Seuls les documents localement pertinents pour la question seront transmis.</p>
+                                <p x-show="isAutomaticContext" x-text="documentsAutomaticHint"></p>
                             </div>
                             <button type="button" class="btn btn-primary" @click="openFilePicker" x-text="appAddDocuments"></button>
                         </div>
@@ -541,7 +555,7 @@
                                         <span class="document-main"><strong x-text="doc.name"></strong><small><span x-text="doc.extension"></span> · <span x-text="doc.sizeLabel"></span> · <span x-text="doc.profileStatusLabel"></span></small></span>
                                     </button>
                                     <div class="document-actions">
-                                        <button type="button" class="btn btn-secondary btn-compact" @click="doc.generateProfile">Générer la fiche</button>
+                                        <button type="button" class="btn btn-secondary btn-compact" @click="doc.generateProfile" x-text="documentsGenerateProfile"></button>
                                         <button type="button" class="btn btn-secondary btn-compact" @click="doc.preview" x-text="documentsPreviewLabel"></button>
                                         <button type="button" class="btn btn-secondary btn-compact" @click="doc.download" x-text="documentsDownloadLabel"></button>
                                         <button type="button" class="conv-action-btn" @click="doc.remove" :title="appDelete">×</button>
@@ -551,23 +565,23 @@
                         </div>
                     </section>
 
-                    <section x-show="isSearchTab" class="search-panel">
-                        <label class="local-search-box"><span>⌕</span><input type="search" :value="documentSearchQuery" @input="updateDocumentSearch" placeholder="Rechercher dans le Markdown du dossier…"></label>
-                        <p class="search-scope">Recherche locale — aucun contenu n’est envoyé au réseau.</p>
+                    <section id="search-panel" x-show="isSearchTab" class="search-panel" role="tabpanel" aria-labelledby="search-tab" :aria-hidden="!isSearchTab" tabindex="0">
+                        <label class="local-search-box"><span aria-hidden="true">⌕</span><span class="sr-only" x-text="documentsSearchLabel"></span><input type="search" :value="documentSearchQuery" @input="updateDocumentSearch" :placeholder="documentsSearchPlaceholder" :aria-label="documentsSearchLabel"></label>
+                        <p class="search-scope" x-text="documentsSearchScope"></p>
                         <div class="search-results" x-show="hasDocumentSearchResults">
                             <template x-for="result in documentSearchResults" :key="result.id">
                                 <button type="button" class="search-result" @click="result.open"><span class="search-result-reference" x-text="result.reference"></span><p x-text="result.excerpt"></p><small><span x-text="result.matchedTermsLabel"></span></small></button>
                             </template>
                         </div>
-                        <div class="document-empty" x-show="hasNoDocumentSearchResults">Aucun passage correspondant dans ce dossier.</div>
+                        <div class="document-empty" x-show="hasNoDocumentSearchResults" x-text="documentsNoSearchResults"></div>
                     </section>
 
-                    <section x-show="isJobsTab" class="jobs-panel">
-                        <div class="overview-commandbar"><div><h3>Queue locale</h3><p>Deux traitements simultanés au maximum. Les checkpoints permettent la reprise.</p></div><button type="button" class="btn btn-primary" @click="queueAllDocumentProfiles">Ajouter les fiches manquantes</button></div>
-                        <div class="document-empty" x-show="hasNoProcessingJobs">Aucun traitement enregistré.</div>
+                    <section id="jobs-panel" x-show="isJobsTab" class="jobs-panel" role="tabpanel" aria-labelledby="jobs-tab" :aria-hidden="!isJobsTab" tabindex="0">
+                        <div class="overview-commandbar"><div><h3 x-text="documentsQueueTitle"></h3><p x-text="documentsQueueDescription"></p></div><button type="button" class="btn btn-primary" @click="queueAllDocumentProfiles" x-text="documentsQueueAction"></button></div>
+                        <div class="document-empty" x-show="hasNoProcessingJobs" x-text="documentsNoJobs"></div>
                         <div class="job-list" x-show="hasProcessingJobs">
                             <template x-for="job in processingJobs" :key="job.id">
-                                <div class="job-row"><span class="job-status" :class="job.status" x-text="job.statusLabel"></span><span class="job-main"><strong x-text="job.documentName"></strong><small><span x-text="job.checkpointStage"></span><span x-show="job.lastError" x-text="job.lastError"></span></small></span><button type="button" class="btn btn-secondary btn-compact" x-show="job.canCancel" @click="job.cancel">Annuler</button><button type="button" class="btn btn-secondary btn-compact" x-show="job.canRetry" @click="job.retry">Reprendre</button></div>
+                                <div class="job-row"><span class="job-status" :class="job.status" x-text="job.statusLabel"></span><span class="job-main"><strong x-text="job.documentName"></strong><small><span x-text="job.checkpointStage"></span><span x-show="job.lastError" x-text="job.lastError"></span></small></span><button type="button" class="btn btn-secondary btn-compact" x-show="job.canCancel" @click="job.cancel" x-text="documentsJobCancel"></button><button type="button" class="btn btn-secondary btn-compact" x-show="job.canRetry" @click="job.retry" x-text="documentsJobRetry"></button></div>
                             </template>
                         </div>
                     </section>
@@ -577,8 +591,8 @@
         </div>
 
         <!-- Consultation du Markdown canonique et de sa provenance -->
-        <div class="modal-overlay" x-cloak x-show="isDocumentPreviewOpen" x-transition>
-            <div class="modal-card modal-card-document" role="dialog" aria-modal="true" aria-labelledby="document-preview-title">
+        <div class="modal-overlay" x-cloak x-show="isDocumentPreviewOpen" x-transition :aria-hidden="!isDocumentPreviewOpen" :inert="hasAnyModal && !isDocumentPreviewOpen">
+            <div class="modal-card modal-card-document" data-modal="preview" role="dialog" aria-modal="true" aria-labelledby="document-preview-title">
                 <template x-if="previewDocument">
                     <div class="document-preview-shell">
                         <div class="modal-header">
@@ -586,7 +600,7 @@
                                 <h2 class="modal-title" id="document-preview-title" x-text="documentPreviewTitle"></h2>
                                 <p class="modal-subtitle"><span x-text="previewDocument.mimeType"></span> · <span x-text="documentPreviewSize"></span></p>
                             </div>
-                            <button type="button" class="modal-close" @click="closeDocumentPreview" aria-label="Fermer">&times;</button>
+                            <button type="button" class="modal-close" @click="closeDocumentPreview" :aria-label="documentsCloseLabel">&times;</button>
                         </div>
                         <div class="document-preview-meta">
                             <strong x-text="documentsProvenanceLabel"></strong>
@@ -598,9 +612,9 @@
                         </div>
                         <template x-if="previewHasProfile">
                             <div class="document-profile-card">
-                                <div class="profile-heading"><span>FICHE DOCUMENTAIRE</span><strong x-text="previewProfile.documentType"></strong></div>
+                                <div class="profile-heading"><span x-text="documentsProfileTitle"></span><strong x-text="previewProfile.documentType"></strong></div>
                                 <p x-text="previewProfile.summary"></p>
-                                <div class="profile-columns"><div><small>Personnes</small><div class="entity-cloud"><template x-for="person in previewProfile.people" :key="person"><span class="entity-chip person" x-text="person"></span></template></div></div><div><small>Organisations</small><div class="entity-cloud"><template x-for="organization in previewProfile.organizations" :key="organization"><span class="entity-chip organization" x-text="organization"></span></template></div></div></div>
+                                <div class="profile-columns"><div><small x-text="documentsPeopleLabel"></small><div class="entity-cloud"><template x-for="person in previewProfile.people" :key="person"><span class="entity-chip person" x-text="person"></span></template></div></div><div><small x-text="documentsOrganizationsLabel"></small><div class="entity-cloud"><template x-for="organization in previewProfile.organizations" :key="organization"><span class="entity-chip organization" x-text="organization"></span></template></div></div></div>
                             </div>
                         </template>
                         <div id="document-preview-markdown" class="modal-body document-preview-markdown markdown-body" x-safe-html="previewMarkdown"></div>
@@ -624,19 +638,19 @@
     </div>
 
     <!-- =====================================================================
-         Scripts locaux (100% Hors-ligne / Zéro CDN)
+         Scripts locaux (Zéro CDN; les opérations IA nécessitent le réseau)
          ===================================================================== -->
     <script src="vendor/jszip.min.js"></script>
     <script src="vendor/pdf.min.js"></script>
     <script src="vendor/marked.min.js"></script>
     <script src="vendor/purify.min.js"></script>
     
-    <script src="js/i18n.js?v=1.0.0"></script>
-    <script src="js/db.js?v=1.0.0"></script>
-    <script src="js/doc-handler.js?v=1.0.0"></script>
-    <script src="js/api.js?v=1.0.0"></script>
-    <script src="js/p1.js?v=1.0.0"></script>
-    <script src="js/app.js?v=1.0.0"></script>
+    <script src="js/i18n.js?v=1.0.1"></script>
+    <script src="js/db.js?v=1.0.1"></script>
+    <script src="js/doc-handler.js?v=1.0.1"></script>
+    <script src="js/api.js?v=1.0.1"></script>
+    <script src="js/p1.js?v=1.0.1"></script>
+    <script src="js/app.js?v=1.0.1"></script>
     <script src="vendor/alpine-csp.min.js?v=3.16.2" defer></script>
 </body>
 </html>

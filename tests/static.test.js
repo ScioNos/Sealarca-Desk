@@ -45,6 +45,53 @@ test('la clé API n’est plus persistée dans IndexedDB', () => {
     assert.match(app, /sessionStorage\.setItem\('sealarca_api_key_session'/);
 });
 
+test('la sélection du modèle reste explicite et la migration ne remplace pas une clé de session', () => {
+    const html = read('index.html');
+    const app = read('js/app.js');
+    assert.match(html, /id="header-model-picker"/);
+    assert.match(html, /id="settings-model-picker"/);
+    assert.match(html, /<option value="" x-text="modelChoosePrompt"><\/option>/);
+    assert.doesNotMatch(app, /this\.models\[0\]\.id/);
+    assert.match(app, /if \(!savedKey && legacyKey\)/);
+});
+
+test('les contrôles interactifs utilisent des éléments natifs et les modales isolent le reste de l’interface', () => {
+    const html = read('index.html');
+    const app = read('js/app.js');
+    assert.doesNotMatch(html, /<div[^>]*class="suggestion-card"/);
+    assert.doesNotMatch(html, /<div[^>]*class="conv-item"[^>]*@click/);
+    assert.doesNotMatch(html, /<div[^>]*@click="role\.select"/);
+    assert.match(html, /:inert="hasAnyModal"/);
+    assert.match(html, /data-modal="settings"/);
+    assert.match(app, /trapModalFocus\(event\)/);
+    assert.match(html, /role="tab"/);
+    assert.match(html, /:aria-selected="isOverviewTab"/);
+    assert.match(html, /role="tabpanel"/);
+});
+
+test('le sélecteur de fichiers propose tous les formats effectivement parsés', () => {
+    const html = read('index.html');
+    for (const extension of ['.pdf', '.docx', '.xlsx', '.pptx', '.odt', '.ods', '.csv', '.txt', '.md', '.json', '.rtf', '.log', '.xml']) {
+        assert.match(html, new RegExp(`accept="[^"]*${extension.replace('.', '\\.')}`));
+    }
+});
+
+test('les nouvelles chaînes de configuration et d’espace documentaire existent dans les cinq langues', () => {
+    const vm = require('node:vm');
+    const context = { window: {} };
+    vm.createContext(context);
+    vm.runInContext(read('js/i18n.js'), context, { filename: 'i18n.js' });
+    const required = {
+        settings: ['getKey', 'chooseModel', 'modelRequired', 'closeBtn', 'networkError'],
+        documents: ['workspaceSubtitle', 'manualMode', 'automaticMode', 'automaticHint', 'overviewTab', 'queueAction', 'statusPending', 'statusCancelled']
+    };
+    for (const language of ['fr', 'de', 'it', 'en', 'es']) {
+        for (const group of Object.keys(required)) {
+            for (const key of required[group]) assert.equal(typeof context.window.SEALARCA_I18N[language][group][key], 'string', `${language}.${group}.${key}`);
+        }
+    }
+});
+
 test('les langues utilisent des drapeaux locaux accessibles sans codes visibles', () => {
     const html = read('index.html');
     const app = read('js/app.js');

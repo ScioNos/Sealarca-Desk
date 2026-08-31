@@ -348,6 +348,13 @@
     color: var(--sealarca-ink-muted);
 }
 
+.external-help-link {
+    align-self: flex-start;
+    color: var(--sealarca-evergreen);
+    font-size: 12px;
+    font-weight: 650;
+}
+
 .form-input,
 .form-select,
 .form-textarea {

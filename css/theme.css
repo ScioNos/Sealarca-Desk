@@ -97,6 +97,27 @@
     display: none !important;
 }
 
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+    outline: 2px solid var(--sealarca-evergreen);
+    outline-offset: 2px;
+}
+
 /* --- Reset global & Base --- */
 *, *::before, *::after {
     box-sizing: border-box;
