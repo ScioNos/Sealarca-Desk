@@ -119,7 +119,7 @@ test('l’interface P1 expose vue dossier, recherche, queue et modes de contexte
     assert.match(html, /x-text="documentsQueueTitle"/);
     assert.match(html, /x-text="documentsAutomaticMode"/);
     assert.match(html, /x-text="documentsGenerateMissing"/);
-    assert.match(html, /js\/p1\.js\?v=1\.0\.2/);
+    assert.match(html, /js\/p1\.js\?v=1\.0\.3/);
 });
 
 test('le projet est source available sous PolyForm Perimeter 1.0.1', () => {
@@ -137,7 +137,7 @@ test('le projet est source available sous PolyForm Perimeter 1.0.1', () => {
 });
 
 
-test('la release cumulative utilise la version 1.0.2 et conserve les versions précédentes', () => {
+test('la release cumulative utilise la version 1.0.3 et conserve les versions précédentes', () => {
     const pkg = JSON.parse(read('package.json'));
     const changelog = read('CHANGELOG.md');
     const notes = read('RELEASE_NOTES.md');
@@ -145,17 +145,18 @@ test('la release cumulative utilise la version 1.0.2 et conserve les versions pr
     const buildScript = read('scripts/build-release.ps1');
     const forbiddenDevelopmentVersion = ['1', '1', '0'].join('.');
 
-    assert.equal(pkg.version, '1.0.2');
+    assert.equal(pkg.version, '1.0.3');
     assert.ok(changelog.includes('## [1.0.0] - 2026-08-29')); 
     assert.ok(changelog.includes('## [1.0.1] - 2026-08-31'));
     assert.ok(changelog.includes('## [1.0.2] - 2026-08-31'));
+    assert.ok(changelog.includes('## [1.0.3] - 2026-09-05'));
     assert.match(changelog, /First Official Release/i);
     assert.doesNotMatch(changelog, /changed from MIT/i);
-    assert.ok(notes.startsWith('# Sealarca Desk v1.0.2'));
-    assert.match(notes, /Fixes in v1.0.1 and v1.0.2/i);
-    assert.ok(notes.includes('Sealarca-Desk-v1.0.2.zip'));
-    assert.ok(buildScript.includes("[string]$Version = '1.0.2'"));
-    assert.ok(html.includes('js/app.js?v=1.0.2'));
+    assert.ok(notes.startsWith('# Sealarca Desk v1.0.3'));
+    assert.match(notes, /First-run improvements in v1.0.3/i);
+    assert.ok(notes.includes('Sealarca-Desk-v1.0.3.zip'));
+    assert.ok(buildScript.includes("[string]$Version = '1.0.3'"));
+    assert.ok(html.includes('js/app.js?v=1.0.3'));
 
     for (const contents of [changelog, notes, html, buildScript, JSON.stringify(pkg)]) {
         assert.equal(contents.includes(forbiddenDevelopmentVersion), false);

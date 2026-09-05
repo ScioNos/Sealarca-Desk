@@ -355,6 +355,71 @@
     font-weight: 650;
 }
 
+.settings-prerequisites {
+    padding: 14px;
+    border: 1px solid var(--sealarca-border);
+    border-radius: var(--radius-md);
+    background: var(--sealarca-paper-muted);
+}
+
+.settings-prerequisites h3,
+.settings-stage-label strong {
+    font-size: 13px;
+    color: var(--sealarca-ink);
+}
+
+.settings-prerequisites ol {
+    display: grid;
+    gap: 7px;
+    margin: 10px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.settings-prerequisites li,
+.settings-stage-label {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    color: var(--sealarca-ink-muted);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.settings-prerequisites li > span:first-child,
+.settings-stage-label > span {
+    display: inline-flex;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--sealarca-evergreen);
+    border-radius: 50%;
+    background: var(--sealarca-surface);
+    color: var(--sealarca-evergreen);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.settings-help-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 18px;
+    margin-top: 10px;
+}
+
+.settings-help-links .external-help-link {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+}
+
+.settings-stage-label {
+    padding-top: 2px;
+}
+
 .form-input,
 .form-select,
 .form-textarea {

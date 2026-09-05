@@ -7,7 +7,7 @@
     
     <!-- Sécurité CSP stricte : Aucun script externe, requêtes autorisées uniquement vers Sealarca Vault et local -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' file: blob: data:; script-src 'self' file:; style-src 'self' file: 'unsafe-inline'; img-src 'self' file: data: blob:; font-src 'self' file: data:; connect-src 'self' file: blob: data: https://sealarca.ch http://localhost:* http://127.0.0.1:*; worker-src 'self' file: blob:; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'none';">
-    <script src="js/boot-theme.js?v=1.0.2"></script>
+    <script src="js/boot-theme.js?v=1.0.3"></script>
 
     <!-- Feuilles de style officielles Sealarca -->
     <link rel="stylesheet" href="css/theme.css">
@@ -372,13 +372,25 @@
 
                 <div class="modal-body">
                     <p id="settings-description" style="font-size: 13px; color: var(--sealarca-ink-muted); line-height: 1.5;" x-text="settingsDesc"></p>
-                    <a class="external-help-link" href="https://sealarca.ch" target="_blank" rel="noopener noreferrer" x-text="settingsGetKeyLabel"></a>
+                    <section class="settings-prerequisites" aria-labelledby="settings-prerequisites-title">
+                        <h3 id="settings-prerequisites-title" x-text="settingsPrerequisitesTitle"></h3>
+                        <ol>
+                            <template x-for="item in settingsPrerequisites" :key="item.number">
+                                <li><span x-text="item.number"></span><span x-text="item.label"></span></li>
+                            </template>
+                        </ol>
+                        <div class="settings-help-links">
+                            <a class="external-help-link" :href="settingsStartUrl" target="_blank" rel="noopener noreferrer" x-text="settingsGetKeyLabel"></a>
+                            <a class="external-help-link" :href="settingsKeysUrl" target="_blank" rel="noopener noreferrer" x-text="settingsOpenKeysLabel"></a>
+                        </div>
+                    </section>
 
                     <!-- Alerte Erreur -->
                     <template x-if="apiError">
                         <div role="alert" aria-live="assertive" style="padding: 10px 12px; border-radius: var(--radius-sm); background-color: var(--sealarca-danger-light); color: var(--sealarca-danger); font-size: 12px;" x-text="apiError"></div>
                     </template>
 
+                    <div class="settings-stage-label"><span>1</span><strong x-text="settingsStepOne"></strong></div>
                     <div class="form-group">
                         <label class="form-label" for="api-key-input" x-text="settingsApiKeyLabel"></label>
                         <div class="api-key-field-row">
@@ -390,6 +402,7 @@
                     </div>
 
                     <!-- Liste des modèles découverts -->
+                    <div class="settings-stage-label" x-show="hasModels"><span>2</span><strong x-text="settingsStepTwo"></strong></div>
                     <div class="form-group" x-show="hasModels">
                         <span class="form-label" id="settings-models-label" x-text="settingsModelsTitle"></span>
                         <span class="form-hint" x-text="settingsModelsHint"></span>
@@ -414,10 +427,10 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" @click="toggleTheme" :title="themeButtonLabel" :aria-label="themeButtonLabel">🌓</button>
                     <button type="button" class="btn btn-secondary" @click="forgetApiKey" x-show="hasApiKey" x-text="settingsForgetLabel"></button>
-                    <button type="button" class="btn btn-secondary" @click="discoverModels" :disabled="settingsActionsDisabled">
+                    <button type="button" class="btn btn-primary" x-show="hasNoModels" @click="discoverModels" :disabled="settingsActionsDisabled">
                         <span x-text="settingsTestLabel"></span>
                     </button>
-                    <button type="button" class="btn btn-primary" @click="saveSettings" :disabled="settingsActionsDisabled" x-text="settingsSaveLabel">
+                    <button type="button" class="btn btn-primary" x-show="hasModels" @click="saveSettings" :disabled="settingsSaveDisabled" x-text="settingsSaveLabel">
                     </button>
                 </div>
             </div>
@@ -649,12 +662,12 @@
     <script src="vendor/marked.min.js"></script>
     <script src="vendor/purify.min.js"></script>
     
-    <script src="js/i18n.js?v=1.0.2"></script>
-    <script src="js/db.js?v=1.0.2"></script>
-    <script src="js/doc-handler.js?v=1.0.2"></script>
-    <script src="js/api.js?v=1.0.2"></script>
-    <script src="js/p1.js?v=1.0.2"></script>
-    <script src="js/app.js?v=1.0.2"></script>
+    <script src="js/i18n.js?v=1.0.3"></script>
+    <script src="js/db.js?v=1.0.3"></script>
+    <script src="js/doc-handler.js?v=1.0.3"></script>
+    <script src="js/api.js?v=1.0.3"></script>
+    <script src="js/p1.js?v=1.0.3"></script>
+    <script src="js/app.js?v=1.0.3"></script>
     <script src="vendor/alpine-csp.min.js?v=3.16.2" defer></script>
 </body>
 </html>

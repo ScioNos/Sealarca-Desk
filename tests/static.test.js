@@ -83,14 +83,24 @@ test('les nouvelles chaînes de configuration et d’espace documentaire existen
     vm.runInContext(read('js/i18n.js'), context, { filename: 'i18n.js' });
     const required = {
         app: ['modelHint', 'roleHint'],
-        settings: ['getKey', 'chooseModel', 'modelRequired', 'modelsHint', 'closeBtn', 'networkError'],
+        settings: ['getKey', 'openKeys', 'prerequisitesTitle', 'stepOne', 'stepTwo', 'chooseModel', 'modelRequired', 'modelsHint', 'closeBtn', 'networkError'],
         documents: ['workspaceSubtitle', 'manualMode', 'automaticMode', 'automaticHint', 'overviewTab', 'queueAction', 'statusPending', 'statusCancelled']
     };
     for (const language of ['fr', 'de', 'it', 'en', 'es']) {
         for (const group of Object.keys(required)) {
             for (const key of required[group]) assert.equal(typeof context.window.SEALARCA_I18N[language][group][key], 'string', `${language}.${group}.${key}`);
         }
+        const prerequisites = context.window.SEALARCA_I18N[language].settings.prerequisites;
+        assert.equal(Array.isArray(prerequisites), true, `${language}.settings.prerequisites`);
+        assert.equal(prerequisites.length, 3, `${language}.settings.prerequisites length`);
     }
+    const html = read('index.html');
+    const app = read('js/app.js');
+    assert.match(html, /settingsPrerequisites/);
+    assert.match(html, /settingsStepOne/);
+    assert.match(html, /settingsStepTwo/);
+    assert.match(app, /commencer#desk/);
+    assert.match(app, /hasVerifiedApiKey/);
 });
 
 test('le premier écran explique le modèle et le rôle sans promesse géographique', () => {

@@ -1,8 +1,15 @@
-# Sealarca Desk v1.0.2
+# Sealarca Desk v1.0.3
 
 Release date: **August 31, 2026**.
 
-Sealarca Desk v1.0.2 is a cumulative corrective release for the source-available local browser client for Sealarca Vault. Runtime assets, document parsing, indexing and browser storage are local; model discovery, chat and document-profile generation require access to `https://sealarca.ch/v1`.
+Sealarca Desk v1.0.3 improves first-run activation for the source-available local browser client. Runtime assets, document parsing, indexing and browser storage are local; model discovery, chat and document-profile generation require access to `https://sealarca.ch/v1`.
+
+## First-run improvements in v1.0.3
+
+- Presents account, credits, and API-key prerequisites before configuration.
+- Separates key verification/model discovery from explicit model selection.
+- Links to the localized Sealarca onboarding page and the account key area.
+- Clarifies session-only key handling and provides recovery guidance for blocked `file://` network access.
 
 ## Highlights
 
@@ -16,7 +23,7 @@ Sealarca Desk v1.0.2 is a cumulative corrective release for the source-available
 - The API key remains in browser `sessionStorage`; application data uses IndexedDB schema version 4.
 - The interface supports French, German, Italian, English and Spanish, five work modes, and light/dark themes.
 
-## Fixes in v1.0.1 and v1.0.2
+## Earlier cumulative fixes
 
 - Keeps an existing session key ahead of stale legacy IndexedDB data and requires an explicit discovered-model choice.
 - Improves first-run configuration, model errors, keyboard navigation, modal focus management, ARIA states and reduced-motion behavior.
@@ -37,16 +44,16 @@ Sealarca Desk v1.0.2 is a cumulative corrective release for the source-available
 
 ## Download
 
-Download `Sealarca-Desk-v1.0.2.zip`, extract it, then open `Sealarca-Desk/index.html` in a modern browser.
+Download `Sealarca-Desk-v1.0.3.zip`, extract it, then open `Sealarca-Desk/index.html` in a modern browser.
 
 The Sealarca API must allow requests from the local `file://` origin. If local-file requests are blocked by browser or organization policy, serve the extracted directory from an approved local static server.
 
 ## Integrity verification
 
-Compare the archive SHA-256 with `Sealarca-Desk-v1.0.2.sha256`.
+Compare the archive SHA-256 with `Sealarca-Desk-v1.0.3.sha256`.
 
 ```powershell
-Get-FileHash .\Sealarca-Desk-v1.0.2.zip -Algorithm SHA256
+Get-FileHash .\Sealarca-Desk-v1.0.3.zip -Algorithm SHA256
 ```
 
 ## Security note

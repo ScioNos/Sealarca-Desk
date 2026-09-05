@@ -30,6 +30,7 @@ document.addEventListener('alpine:init', () => {
 
         // --- État de configuration & API ---
         apiKey: '',
+        verifiedApiKey: '',
         models: [],
         selectedModel: '',
         isLoadingModels: false,
@@ -138,6 +139,16 @@ document.addEventListener('alpine:init', () => {
         get settingsForgetLabel() { return this.t('settings.forgetBtn'); },
         get settingsToggleKeyLabel() { return this.t(this.isApiKeyVisible ? 'settings.hideKey' : 'settings.showKey'); },
         get settingsGetKeyLabel() { return this.t('settings.getKey'); },
+        get settingsOpenKeysLabel() { return this.t('settings.openKeys'); },
+        get settingsPrerequisitesTitle() { return this.t('settings.prerequisitesTitle'); },
+        get settingsPrerequisites() { return this.t('settings.prerequisites'); },
+        get settingsStepOne() { return this.t('settings.stepOne'); },
+        get settingsStepTwo() { return this.t('settings.stepTwo'); },
+        get settingsStartUrl() {
+            const locale = ['fr', 'de', 'it', 'en'].includes(this.currentLang) ? this.currentLang : 'en';
+            return `https://sealarca.ch/${locale}/commencer#desk`;
+        },
+        get settingsKeysUrl() { return 'https://sealarca.ch/keys'; },
         get settingsCloseLabel() { return this.t('settings.closeBtn'); },
         get modelPickerLabel() { return this.t('app.model'); },
         get modelChoosePrompt() { return this.t('settings.chooseModel'); },
@@ -171,8 +182,10 @@ document.addEventListener('alpine:init', () => {
         get showSendIcon() { return !this.isStreaming; },
         get showStopIcon() { return this.isStreaming; },
         get hasApiKey() { return Boolean(this.apiKey && this.apiKey.trim()); },
-        get hasConfiguredApi() { return this.hasApiKey && this.models.length > 0; },
+        get hasVerifiedApiKey() { return Boolean(this.verifiedApiKey && this.verifiedApiKey === this.apiKey.trim()); },
+        get hasConfiguredApi() { return this.hasVerifiedApiKey && this.models.length > 0 && Boolean(this.selectedModel); },
         get settingsActionsDisabled() { return this.isLoadingModels || !this.hasApiKey; },
+        get settingsSaveDisabled() { return this.isLoadingModels || !this.selectedModel; },
         get apiKeyInputType() { return this.isApiKeyVisible ? 'text' : 'password'; },
         get hasModels() { return this.models.length > 0; },
         get hasToast() { return Boolean(this.toastMessage); },
@@ -336,7 +349,14 @@ document.addEventListener('alpine:init', () => {
             return this.modelChanged();
         },
         updatePrompt(event) { this.inputPrompt = event.currentTarget.value; },
-        updateApiKey(event) { this.apiKey = event.currentTarget.value; },
+        updateApiKey(event) {
+            const nextKey = event.currentTarget.value;
+            if (nextKey.trim() !== this.verifiedApiKey) {
+                this.models = [];
+                this.selectedModel = '';
+            }
+            this.apiKey = nextKey;
+        },
         sendOrStop() { return this.isStreaming ? this.stopGeneration() : this.sendMessage(); },
         toggleLiveReasoning() { this.isReasoningOpen = !this.isReasoningOpen; },
         toggleApiKeyVisibility() { this.isApiKeyVisible = !this.isApiKeyVisible; },
@@ -553,6 +573,7 @@ document.addEventListener('alpine:init', () => {
                     }
                 }
                 try { sessionStorage.setItem('sealarca_api_key_session', this.apiKey.trim()); } catch { /* indisponible */ }
+                this.verifiedApiKey = this.apiKey.trim();
                 await window.sealarcaDb.deleteSetting('sealarca_api_key');
                 if (!silent) this.showToast(this.t('settings.syncSuccess'));
                 return true;
@@ -560,6 +581,7 @@ document.addEventListener('alpine:init', () => {
                 console.error('Erreur découverte modèles:', err);
                 this.models = [];
                 this.selectedModel = '';
+                this.verifiedApiKey = '';
                 const rawMessage = String(err?.message || '');
                 this.apiError = !err?.status && /failed to fetch|network|networkerror|load failed|connexion/i.test(rawMessage)
                     ? this.t('settings.networkError')
@@ -578,9 +600,12 @@ document.addEventListener('alpine:init', () => {
         async saveSettings() {
             const cleanKey = this.apiKey ? this.apiKey.trim() : '';
             this.apiKey = cleanKey;
-            const connected = await this.loadModels(false);
-            if (connected && this.selectedModel) this.isSettingsOpen = false;
-            else if (connected) this.apiError = this.t('settings.modelRequired');
+            if (!this.hasVerifiedApiKey || this.models.length === 0) {
+                const connected = await this.loadModels(false);
+                if (!connected) return;
+            }
+            if (this.selectedModel) this.isSettingsOpen = false;
+            else this.apiError = this.t('settings.modelRequired');
         },
 
         async forgetApiKey() {
@@ -589,6 +614,7 @@ document.addEventListener('alpine:init', () => {
             await window.sealarcaDb.deleteSetting('sealarca_api_key');
             await window.sealarcaDb.deleteSetting('sealarca_model');
             this.apiKey = '';
+            this.verifiedApiKey = '';
             this.selectedModel = '';
             this.models = [];
             this.apiError = '';

@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.3] - 2026-09-05
+
+### Improved
+
+- Replaced the first-run connection modal with a clear two-step key verification and model selection flow.
+- Added localized prerequisites and direct links to prepare a Sealarca account or open API keys.
+- Clarified that the API key is supplied to the local application, kept in tab `sessionStorage`, and not embedded in the public site or persisted in IndexedDB.
+- Added recoverable guidance when organizational browser policies block `file://` network access.
+- Updated French, German, Italian, English, and Spanish onboarding copy.
+
 All notable changes to **Sealarca-Desk** are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).

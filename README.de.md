@@ -6,7 +6,7 @@
 *Lokale Dokumentaufbereitung, explizite Kontextauswahl und direkter Vault-Zugriff.*
 
 [![Lizenz: PolyForm Perimeter 1.0.1](https://img.shields.io/badge/Lizenz-PolyForm%20Perimeter%201.0.1-087F68.svg)](LICENSE)
-[![Version: v1.0.2](https://img.shields.io/badge/Version-v1.0.2-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.0.2)
+[![Version: v1.0.3](https://img.shields.io/badge/Version-v1.0.3-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.0.3)
 
 🌐 **Language / Langue / Sprache / Lingua / Idioma**  
 [English 🇬🇧](README.md) · [Français 🇫🇷](README.fr.md) · **Deutsch** · [Italiano 🇮🇹](README.it.md) · [Español 🇪🇸](README.es.md)
