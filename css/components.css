@@ -547,3 +547,5 @@
     0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
     40% { transform: scale(1); opacity: 1; }
 }
+
+.extraction-warning { display: block; color: #865100; background: #fff7e6; padding: 8px; font-size: 13px; line-height: 1.5; white-space: normal; }

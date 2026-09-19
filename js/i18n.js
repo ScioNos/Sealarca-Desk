@@ -7,6 +7,7 @@
 const SEALARCA_I18N = {
     // --- 🇫🇷 Français ---
     fr: {
+        extraction: {"tooLarge": "Le tableau extrait dépasse la limite de 500 000 caractères.", "rows": "{sheet} : seules les {used} premières lignes sur {total} ont été extraites.", "pdf_pages": "Pages sans texte exploitable : {pages}. Aucun OCR intégré ; ces pages ne sont pas transmises comme texte.", "noText": "Ce PDF ne contient aucun texte exploitable. Desk ne fait pas d’OCR. Utilisez une copie avec couche texte."},
         app: {
             name: 'Sealarca',
             desk: 'Desk',
@@ -121,6 +122,7 @@ const SEALARCA_I18N = {
 
     // --- 🇩🇪 Deutsch ---
     de: {
+        extraction: {"tooLarge": "Die extrahierte Tabelle überschreitet die Grenze von 500 000 Zeichen.", "rows": "{sheet}: Nur die ersten {used} von {total} Zeilen wurden extrahiert.", "pdf_pages": "Seiten ohne auslesbaren Text: {pages}. Keine integrierte OCR; diese Seiten werden nicht als Text gesendet.", "noText": "Dieses PDF enthält keinen auslesbaren Text. Desk bietet keine OCR. Verwenden Sie eine Kopie mit Textebene."},
         app: {
             name: 'Sealarca',
             desk: 'Desk',
@@ -235,6 +237,7 @@ const SEALARCA_I18N = {
 
     // --- 🇮🇹 Italiano ---
     it: {
+        extraction: {"tooLarge": "La tabella estratta supera il limite di 500 000 caratteri.", "rows": "{sheet}: estratte solo le prime {used} righe su {total}.", "pdf_pages": "Pagine senza testo estraibile: {pages}. Nessun OCR integrato; queste pagine non vengono inviate come testo.", "noText": "Questo PDF non contiene testo estraibile. Desk non dispone di OCR. Utilizzare una copia con un livello di testo."},
         app: {
             name: 'Sealarca',
             desk: 'Desk',
@@ -349,6 +352,7 @@ const SEALARCA_I18N = {
 
     // --- 🇬🇧 English ---
     en: {
+        extraction: {"tooLarge": "The extracted table exceeds the 500,000-character limit.", "rows": "{sheet}: only the first {used} of {total} rows were extracted.", "pdf_pages": "Pages without extractable text: {pages}. No built-in OCR; these pages are not sent as text.", "noText": "This PDF has no extractable text. Desk has no OCR. Use a copy with a text layer."},
         app: {
             name: 'Sealarca',
             desk: 'Desk',
@@ -463,6 +467,7 @@ const SEALARCA_I18N = {
 
     // --- 🇪🇸 Español ---
     es: {
+        extraction: {"tooLarge": "La tabla extraída supera el límite de 500 000 caracteres.", "rows": "{sheet}: solo se han extraído las primeras {used} de {total} filas.", "pdf_pages": "Páginas sin texto extraíble: {pages}. Sin OCR integrado; estas páginas no se envían como texto.", "noText": "Este PDF no contiene texto extraíble. Desk no dispone de OCR. Utilice una copia con una capa de texto."},
         app: {
             name: 'Sealarca',
             desk: 'Desk',

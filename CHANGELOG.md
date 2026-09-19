@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.0.4] - 2026-09-19
+
+### Fixed
+
+- Surface partial-extraction warnings at import, in the document library and in previews, in all five interface languages.
+- Limit ODS extraction to 100 logical rows per sheet, including repeated rows, and retain sheet/row provenance and original files.
+- Identify PDF pages without extractable text and explain the absence of built-in OCR for scan-only PDFs.
+- Align discovered model labels with the public catalogue without changing model IDs or automatic discovery.
+- Preserve earlier release archives when building a new distribution.
+
+### Verification
+
+- Added boundary tests for CSV, multi-sheet ODS, repeated rows, mixed/scan-only PDFs and oversized documents.
+- No IndexedDB schema change, stored document rewrite or API protocol change.
+
 ## [1.0.3] - 2026-09-05
 
 ### Improved

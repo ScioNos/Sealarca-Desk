@@ -348,7 +348,7 @@ class SealarcaAPI {
 
     _formatModelLabel(modelId) {
         const rawName = String(modelId || 'Modèle Sealarca').split('/').pop();
-        return rawName.replace(/[-_]/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase());
+        return rawName.replace(/-vault$/i, '').replace(/^glm\./i, 'GLM ').replace(/[-_]/g, ' ').replace(/\b[a-z]/g, letter => letter.toUpperCase());
     }
 }
 

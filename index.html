@@ -7,7 +7,7 @@
     
     <!-- Sécurité CSP stricte : Aucun script externe, requêtes autorisées uniquement vers Sealarca Vault et local -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' file: blob: data:; script-src 'self' file:; style-src 'self' file: 'unsafe-inline'; img-src 'self' file: data: blob:; font-src 'self' file: data:; connect-src 'self' file: blob: data: https://sealarca.ch http://localhost:* http://127.0.0.1:*; worker-src 'self' file: blob:; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'none';">
-    <script src="js/boot-theme.js?v=1.0.3"></script>
+    <script src="js/boot-theme.js?v=1.0.4"></script>
 
     <!-- Feuilles de style officielles Sealarca -->
     <link rel="stylesheet" href="css/theme.css">
@@ -519,7 +519,7 @@
                                     <template x-for="doc in documents" :key="doc.id">
                                         <button type="button" class="overview-document" @click="doc.preview">
                                             <span class="document-type-mark" x-text="doc.extension"></span>
-                                            <span><strong x-text="doc.name"></strong><small><span x-text="doc.pageLabel"></span><span x-text="doc.profileStatusLabel"></span></small></span>
+                                            <span><strong x-text="doc.name"></strong><small class="extraction-warning" x-show="doc.warningText" x-text="doc.warningText"></small><small><span x-text="doc.pageLabel"></span><span x-text="doc.profileStatusLabel"></span></small></span>
                                             <span aria-hidden="true">↗</span>
                                         </button>
                                     </template>
@@ -569,7 +569,7 @@
                                 <div class="document-row" :class="doc.selectionClass">
                                     <button type="button" class="document-select" @click="doc.toggle" :aria-pressed="doc.isSelected">
                                         <span class="document-check" x-text="doc.selectionMark"></span>
-                                        <span class="document-main"><strong x-text="doc.name"></strong><small><span x-text="doc.extension"></span> · <span x-text="doc.sizeLabel"></span> · <span x-text="doc.profileStatusLabel"></span></small></span>
+                                        <span class="document-main"><strong x-text="doc.name"></strong><small class="extraction-warning" x-show="doc.warningText" x-text="doc.warningText"></small><small><span x-text="doc.extension"></span> · <span x-text="doc.sizeLabel"></span> · <span x-text="doc.profileStatusLabel"></span></small></span>
                                     </button>
                                     <div class="document-actions">
                                         <button type="button" class="btn btn-secondary btn-compact" @click="doc.generateProfile" x-text="documentsGenerateProfile"></button>
@@ -615,6 +615,7 @@
                         <div class="modal-header">
                             <div>
                                 <h2 class="modal-title" id="document-preview-title" x-text="documentPreviewTitle"></h2>
+                                <template x-for="warning in documentPreviewWarnings"><p class="extraction-warning" x-text="warning"></p></template>
                                 <p class="modal-subtitle"><span x-text="previewDocument.mimeType"></span> · <span x-text="documentPreviewSize"></span></p>
                             </div>
                             <button type="button" class="modal-close" @click="closeDocumentPreview" :aria-label="documentsCloseLabel">&times;</button>
@@ -662,12 +663,12 @@
     <script src="vendor/marked.min.js"></script>
     <script src="vendor/purify.min.js"></script>
     
-    <script src="js/i18n.js?v=1.0.3"></script>
-    <script src="js/db.js?v=1.0.3"></script>
-    <script src="js/doc-handler.js?v=1.0.3"></script>
-    <script src="js/api.js?v=1.0.3"></script>
-    <script src="js/p1.js?v=1.0.3"></script>
-    <script src="js/app.js?v=1.0.3"></script>
+    <script src="js/i18n.js?v=1.0.4"></script>
+    <script src="js/db.js?v=1.0.4"></script>
+    <script src="js/doc-handler.js?v=1.0.4"></script>
+    <script src="js/api.js?v=1.0.4"></script>
+    <script src="js/p1.js?v=1.0.4"></script>
+    <script src="js/app.js?v=1.0.4"></script>
     <script src="vendor/alpine-csp.min.js?v=3.16.2" defer></script>
 </body>
 </html>

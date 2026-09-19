@@ -1,5 +1,5 @@
 param(
-    [string]$Version = '1.0.3'
+    [string]$Version = '1.0.4'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -8,12 +8,12 @@ $releaseRoot = Join-Path $projectRoot '.release'
 $stagingRoot = Join-Path $releaseRoot 'staging'
 $bundleRoot = Join-Path $stagingRoot 'Sealarca-Desk'
 
-if (Test-Path $releaseRoot) {
-    $resolvedRelease = (Resolve-Path $releaseRoot).Path
+if (Test-Path $stagingRoot) {
+    $resolvedRelease = (Resolve-Path $stagingRoot).Path
     if (-not $resolvedRelease.StartsWith($projectRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
         throw 'Refusing to remove a release directory outside the project.'
     }
-    Remove-Item -LiteralPath $releaseRoot -Recurse -Force
+    Remove-Item -LiteralPath $stagingRoot -Recurse -Force
 }
 
 New-Item -ItemType Directory -Path $bundleRoot -Force | Out-Null
@@ -30,7 +30,7 @@ $archiveName = "Sealarca-Desk-v$Version.zip"
 $archivePath = Join-Path $releaseRoot $archiveName
 $checksumPath = Join-Path $releaseRoot "Sealarca-Desk-v$Version.sha256"
 
-Compress-Archive -LiteralPath $bundleRoot -DestinationPath $archivePath -CompressionLevel Optimal
+Compress-Archive -LiteralPath $bundleRoot -DestinationPath $archivePath -CompressionLevel Optimal -Force
 $sha256 = [System.Security.Cryptography.SHA256]::Create()
 try {
     $stream = [System.IO.File]::OpenRead($archivePath)

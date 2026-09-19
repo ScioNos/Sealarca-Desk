@@ -112,6 +112,7 @@ document.addEventListener('alpine:init', () => {
         get documentsDownloadLabel() { return this.t('documents.download'); },
         get documentsProvenanceLabel() { return this.t('documents.provenance'); },
         get documentsDownloadOriginalLabel() { return this.t('documents.downloadOriginal'); },
+        get documentPreviewWarnings() { return this.extractionWarnings(this.previewDocument); },
         get documentPreviewTitle() { return this.previewDocument ? this.previewDocument.name : this.t('documents.preview'); },
         get documentPreviewSize() { return this.previewDocument ? this.formatBytes(this.previewDocument.size) : ''; },
         get previewHasProfile() { return Boolean(this.previewDocument?.profile?.status === 'valid'); },
@@ -712,6 +713,7 @@ document.addEventListener('alpine:init', () => {
                     get isSelected() { return app.selectedDocumentIds.includes(document.id); },
                     get selectionClass() { return decorated.isSelected ? 'selected' : ''; },
                     get selectionMark() { return decorated.isSelected ? '✓' : '+'; },
+                    get warningText() { return app.extractionWarnings(document).join(' · '); },
                     get sizeLabel() { return app.formatBytes(document.size); },
                     get pageLabel() { const pages = Number(document.metadata?.pageCount || 0); return pages ? pages + ' pages' : ''; },
                     get profileStatusLabel() { return app.t(decorated.profile?.status === 'valid' ? 'documents.profileAvailable' : 'documents.profileToGenerate'); },
@@ -1174,6 +1176,15 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
+        extractionWarnings(document) {
+            return (document?.metadata?.extraction?.warnings || []).map(warning => {
+                if (typeof warning === 'string') return warning;
+                let text = this.t('extraction.' + warning.code);
+                for (const [key, value] of Object.entries(warning)) text = text.replaceAll('{' + key + '}', String(value));
+                return text;
+            });
+        },
+
         async processFiles(fileList) {
             if (!this.activeFolderId) return;
             const maxFiles = 5;
@@ -1187,10 +1198,13 @@ document.addEventListener('alpine:init', () => {
                     const saved = duplicate || await window.sealarcaDb.saveDocument({ ...parsed, folderId: this.activeFolderId });
                     if (!this.selectedDocumentIds.includes(saved.id)) this.selectedDocumentIds.push(saved.id);
                     await this.loadDocuments();
-                    this.showToast(duplicate ? `↩️ ${file.name} déjà présent et sélectionné` : `✅ ${file.name}`);
+                    const warnings = this.extractionWarnings(saved);
+                    if (warnings.length) this.showToast('⚠ ' + file.name + ': ' + warnings.join(' '), 10000);
+                    else this.showToast(duplicate ? `↩️ ${file.name} déjà présent et sélectionné` : `✅ ${file.name}`);
                 } catch (err) {
                     console.error('Erreur extraction document:', err);
-                    this.showToast(`❌ ${file.name} : ${err.message}`);
+                    const message = err.code === 'pdf_no_text' ? this.t('extraction.noText') : err.code === 'extracted_too_large' ? this.t('extraction.tooLarge') : err.message;
+                    this.showToast(`❌ ${file.name} : ${message}`, 10000);
                 }
             }
         },

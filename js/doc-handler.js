@@ -143,7 +143,8 @@ class SealarcaDocHandler {
         if (!window.pdfjsLib) throw new Error('PDF.js non disponible en local.');
         const pdf = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
         if (pdf.numPages > this.limits.maxPdfPages) throw new Error('Le PDF dépasse la limite de 100 pages.');
-        const result = { markdown: `# Document PDF : ${file.name}\n\n`, sourceMap: [], metadata: { pageCount: pdf.numPages }, parser: 'pdfjs' };
+        const result = { markdown: `# Document PDF : ${file.name}\n\n`, sourceMap: [], metadata: { pageCount: pdf.numPages }, parser: 'pdfjs', warnings: [] };
+        const emptyPages = [];
         for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
             const page = await pdf.getPage(pageNumber);
             const content = await page.getTextContent();
@@ -161,9 +162,16 @@ class SealarcaDocHandler {
                 lastY = y;
             }
             if (currentLine.trim()) pageLines.push(currentLine.trim());
+            if (!pageLines.length) emptyPages.push(pageNumber);
             if (pageLines.length) {
                 this._appendSection(result, `## Page ${pageNumber}\n\n${pageLines.join('\n')}`, { type: 'pdf-page', page: pageNumber }, `Page ${pageNumber}`);
             }
+        }
+        if (emptyPages.length) result.warnings.push({ code: 'pdf_pages', pages: emptyPages.join(', ') });
+        if (!result.sourceMap.length) {
+            const error = new Error('PDF without extractable text');
+            error.code = 'pdf_no_text';
+            throw error;
         }
         return result;
     }
@@ -249,7 +257,7 @@ class SealarcaDocHandler {
             const firstRow = usedRows[0]?.getAttribute('r') || (usedRows.length ? '1' : null);
             const lastRow = usedRows[usedRows.length - 1]?.getAttribute('r') || firstRow;
             const range = cellReferences.length ? `${cellReferences[0]}:${cellReferences[cellReferences.length - 1]}` : null;
-            if (rows.length > usedRows.length) result.warnings.push(`${sheetName}: extraction limitée aux ${usedRows.length} premières lignes sur ${rows.length}.`);
+            if (rows.length > usedRows.length) result.warnings.push({ code: 'rows', sheet: sheetName, used: usedRows.length, total: rows.length });
             if (markdownRows.length && hasCellText) {
                 this._appendSection(result, `## ${sheetName}\n\n${markdownRows.join('\n')}`, {
                     type: 'spreadsheet-range', sheet: sheetName, range, startRow: firstRow, endRow: lastRow, truncated: rows.length > usedRows.length
@@ -288,6 +296,7 @@ class SealarcaDocHandler {
         const content = zip.file('content.xml');
         if (!content) throw new Error('Fichier OpenDocument invalide (content.xml introuvable).');
         const doc = this._parseXml(await content.async('string'), 'OpenDocument');
+        if (extension === 'ods') return this._extractOds(doc, file.name);
         const result = { markdown: `# Document OpenDocument : ${file.name}\n\n`, sourceMap: [], metadata: {}, parser: 'odf-xml' };
         let paragraph = 0;
         for (const node of doc.getElementsByTagName('text:p')) {
@@ -297,6 +306,45 @@ class SealarcaDocHandler {
             this._appendSection(result, text, { type: extension === 'ods' ? 'odf-cell-text' : 'odf-paragraph', paragraph }, `Bloc ${paragraph}`);
         }
         result.metadata.paragraphCount = paragraph;
+        return result;
+    }
+
+    _extractOds(doc, name) {
+        const result = { markdown: `# ${name}\n\n`, sourceMap: [], metadata: {}, parser: 'ods-xml', warnings: [] };
+        const tables = Array.from(doc.getElementsByTagName('table:table'));
+        result.metadata.sheetCount = tables.length;
+        const repeated = (node, attr) => Math.max(1, Math.min(Number(node.getAttribute(attr)) || 1, Number.MAX_SAFE_INTEGER));
+        for (const [index, table] of tables.entries()) {
+            const sheet = table.getAttribute('table:name') || `Sheet ${index + 1}`;
+            const rows = Array.from(table.getElementsByTagName('table:table-row'));
+            let total = 0, used = 0;
+            for (const row of rows) {
+                const count = repeated(row, 'table:number-rows-repeated');
+                total = Math.min(Number.MAX_SAFE_INTEGER, total + count);
+                const take = Math.min(count, this.limits.maxTabularRowsPerSheet - used);
+                if (take <= 0) continue;
+                const cells = Array.from(row.children).filter(cell => ['table:table-cell', 'table:covered-table-cell'].includes(cell.nodeName));
+                const values = [];
+                for (const cell of cells) {
+                    const text = Array.from(cell.getElementsByTagName('text:p')).map(p => p.textContent.trim()).join(' ').replace(/\|/g, '\\|');
+                    const columns = Math.min(repeated(cell, 'table:number-columns-repeated'), this.limits.maxExtractedCharacters);
+                    if ((values.length + columns) * Math.max(3, text.length) > this.limits.maxExtractedCharacters) {
+                        const error = new Error('Extracted table too large');
+                        error.code = 'extracted_too_large';
+                        throw error;
+                    }
+                    for (let c = 0; c < columns; c++) values.push(text);
+                }
+                for (let i = 0; i < take; i++) {
+                    used++;
+                    if (values.some(Boolean)) {
+                        const line = '| ' + values.join(' | ') + ' |';
+                        this._appendSection(result, line, { type: 'spreadsheet-range', sheet, startRow: used, endRow: used }, `${sheet} — ${used}`);
+                    }
+                }
+            }
+            if (total > used) result.warnings.push({ code: 'rows', sheet, used, total });
+        }
         return result;
     }
 
@@ -311,7 +359,7 @@ class SealarcaDocHandler {
             return index === 0 ? line + '\n| ' + values.map(() => '---').join(' | ') + ' |' : line;
         }).join('\n');
         const result = { markdown: `# Données CSV : ${file.name}\n\n`, sourceMap: [], metadata: { rowCount: rows.length, delimiter }, parser: 'csv', warnings: [] };
-        if (rows.length > usedRows.length) result.warnings.push(`Extraction limitée aux ${usedRows.length} premières lignes sur ${rows.length}.`);
+        if (rows.length > usedRows.length) result.warnings.push({ code: 'rows', sheet: file.name, used: usedRows.length, total: rows.length });
         this._appendSection(result, table, { type: 'csv-row-range', startRow: usedRows.length ? 1 : null, endRow: usedRows.length, truncated: rows.length > usedRows.length }, `Lignes 1–${usedRows.length}`);
         return result;
     }

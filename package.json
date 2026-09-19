@@ -1,6 +1,6 @@
 {
   "name": "sealarca-desk",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "description": "Client local source available pour Sealarca Vault avec dossiers et bibliothèque documentaire Markdown",
   "scripts": {
