@@ -10,6 +10,7 @@ class SealarcaAPI {
     constructor() {
         this.currentAbortController = null;
         this.timeoutId = null;
+        this.profileControllers = new Set();
     }
 
     async fetchModels(apiKey) {
@@ -54,13 +55,13 @@ class SealarcaAPI {
                 return {
                     id: cleanId,
                     name: this._formatModelLabel(cleanId),
-                    description: typeof model === 'object' ? model.description : '',
+                    description: typeof model === 'object' && typeof model.description === 'string' ? model.description : '',
                     created: typeof model === 'object' ? model.created : undefined,
-                    owned_by: typeof model === 'object' ? (model.owned_by || 'sealarca') : 'sealarca'
+                    owned_by: typeof model === 'object' && typeof model.owned_by === 'string' ? model.owned_by : 'sealarca'
                 };
             })
             .filter(Boolean)
-            .sort((left, right) => left.name.localeCompare(right.name));
+            .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }));
 
         if (models.length === 0) {
             throw new Error('Aucun modèle n’est disponible pour cette clé API.');
@@ -81,6 +82,7 @@ class SealarcaAPI {
         let fullText = '';
         let fullReasoning = '';
         let doneCalled = false;
+        let completed = false;
         let controller = null;
         let requestTimeoutId = null;
 
@@ -97,8 +99,12 @@ class SealarcaAPI {
             this.abortCurrentRequest();
             controller = new AbortController();
             this.currentAbortController = controller;
-            requestTimeoutId = setTimeout(() => controller.abort('timeout'), REQUEST_TIMEOUT_MS);
-            this.timeoutId = requestTimeoutId;
+            const armTimeout = () => {
+                clearTimeout(requestTimeoutId);
+                requestTimeoutId = setTimeout(() => controller.abort('timeout'), REQUEST_TIMEOUT_MS);
+                this.timeoutId = requestTimeoutId;
+            };
+            armTimeout();
 
             const input = [];
             for (const message of messages || []) {
@@ -138,64 +144,64 @@ class SealarcaAPI {
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
+            const processData = async line => {
+                const trimmed = line.trim();
+                if (!trimmed || trimmed.startsWith(':') || !trimmed.startsWith('data:')) return false;
+                const raw = trimmed.slice(5).trim();
+                if (!raw || raw === '[DONE]') return false;
+                let event;
+                try { event = JSON.parse(raw); }
+                catch (error) { throw new Error(`Événement streaming invalide : ${error.message}`); }
+                const type = event.type;
+                if (type === 'response.output_text.delta' && typeof event.delta === 'string') {
+                    fullText += event.delta;
+                    onChunk({ type: 'content', chunk: event.delta, fullText, fullReasoning });
+                } else if (
+                    (type === 'response.reasoning_summary_text.delta' || type === 'response.reasoning_text.delta')
+                    && typeof event.delta === 'string'
+                ) {
+                    fullReasoning += event.delta;
+                    onChunk({ type: 'reasoning', chunk: event.delta, fullText, fullReasoning });
+                } else if (type === 'response.completed') {
+                    completed = true;
+                    try { await reader.cancel(); } catch (_) { /* flux déjà terminé */ }
+                    try { reader.releaseLock?.(); } catch (_) { /* verrou déjà libéré */ }
+                    await finish({ interrupted: false, response: event.response || null });
+                    return true;
+                } else if (type === 'error' || type === 'response.failed') {
+                    const message = event.error?.message || event.response?.error?.message || event.message;
+                    throw new Error(message || 'La génération a échoué.');
+                }
+                return false;
+            };
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
+                armTimeout();
                 buffer += decoder.decode(value, { stream: true });
                 const lines = buffer.split(/\r?\n/);
                 buffer = lines.pop() || '';
-
                 for (const line of lines) {
-                    const trimmed = line.trim();
-                    if (!trimmed || trimmed.startsWith(':') || !trimmed.startsWith('data:')) continue;
-                    const raw = trimmed.slice(5).trim();
-                    if (!raw || raw === '[DONE]') continue;
-
-                    let event;
-                    try {
-                        event = JSON.parse(raw);
-                    } catch (error) {
-                        throw new Error(`Événement streaming invalide : ${error.message}`);
-                    }
-
-                    const type = event.type;
-                    if (type === 'response.output_text.delta' && typeof event.delta === 'string') {
-                        fullText += event.delta;
-                        onChunk({ type: 'content', chunk: event.delta, fullText, fullReasoning });
-                    } else if (
-                        (type === 'response.reasoning_summary_text.delta' || type === 'response.reasoning_text.delta')
-                        && typeof event.delta === 'string'
-                    ) {
-                        fullReasoning += event.delta;
-                        onChunk({ type: 'reasoning', chunk: event.delta, fullText, fullReasoning });
-                    } else if (type === 'response.completed') {
-                        await finish({ interrupted: false, response: event.response || null });
-                        return;
-                    } else if (type === 'error' || type === 'response.failed') {
-                        const message = event.error?.message || event.response?.error?.message || event.message;
-                        throw new Error(message || 'La génération a échoué.');
-                    }
+                    const shouldReturn = await processData(line);
+                    if (shouldReturn) { try { await reader.cancel(); } catch (_) {} try { reader.releaseLock?.(); } catch (_) {} return; }
                 }
             }
 
-            if (buffer.trim().startsWith('data:')) {
-                const raw = buffer.trim().slice(5).trim();
-                if (raw && raw !== '[DONE]') {
-                    const event = JSON.parse(raw);
-                    if (event.type === 'response.output_text.delta' && typeof event.delta === 'string') {
-                        fullText += event.delta;
-                        onChunk({ type: 'content', chunk: event.delta, fullText, fullReasoning });
-                    }
-                }
+            buffer += decoder.decode();
+            if (buffer) {
+                const shouldReturn = await processData(buffer);
+                if (shouldReturn) { try { await reader.cancel(); } catch (_) {} try { reader.releaseLock?.(); } catch (_) {} return; }
             }
 
-            await finish({ interrupted: false });
+            if (!completed) await finish({ interrupted: true, reason: 'eof_without_completion' });
         } catch (error) {
-            if (error.name === 'AbortError') {
-                await finish({ interrupted: true });
+            if (error.name === 'AbortError' || controller?.signal.aborted) {
+                const reason = controller?.signal.reason === 'timeout' ? 'timeout' : 'cancelled';
+                await finish({ interrupted: true, reason });
             } else {
                 console.error('Erreur Responses API Sealarca:', error);
+                if (fullText || fullReasoning) await finish({ interrupted: true, reason: 'stream_error' });
                 await onError(error);
             }
         } finally {
@@ -211,6 +217,7 @@ class SealarcaAPI {
         const key = this._requireApiKey(apiKey);
         if (!model) throw new Error('Aucun modèle sélectionné.');
         const controller = new AbortController();
+        this.profileControllers.add(controller);
         let timedOut = false;
         const abortFromCaller = () => controller.abort();
         if (signal) {
@@ -247,6 +254,7 @@ class SealarcaAPI {
             throw error;
         } finally {
             clearTimeout(timeoutId);
+            this.profileControllers.delete(controller);
             if (signal) signal.removeEventListener('abort', abortFromCaller);
         }
     }
@@ -315,6 +323,20 @@ class SealarcaAPI {
         return true;
     }
 
+    abortProfileRequests(reason = 'cancelled') {
+        let aborted = false;
+        for (const controller of Array.from(this.profileControllers)) {
+            try { controller.abort(reason); aborted = true; } catch (_) { /* déjà terminé */ }
+        }
+        return aborted;
+    }
+
+    abortAllRequests(reason = 'cancelled') {
+        const chat = this.abortCurrentRequest();
+        const profiles = this.abortProfileRequests(reason);
+        return chat || profiles;
+    }
+
     _requireApiKey(apiKey) {
         const key = typeof apiKey === 'string' ? apiKey.trim() : '';
         if (!key) throw new Error('Veuillez renseigner votre clé API Sealarca.');
@@ -341,7 +363,11 @@ class SealarcaAPI {
         const retryAfter = response.headers.get('retry-after');
         if (retryAfter) {
             const seconds = Number(retryAfter);
-            error.retryAfterMs = Number.isFinite(seconds) ? seconds * 1000 : Math.max(0, Date.parse(retryAfter) - Date.now());
+            if (Number.isFinite(seconds)) error.retryAfterMs = seconds * 1000;
+            else {
+                const delay = Date.parse(retryAfter) - Date.now();
+                error.retryAfterMs = Number.isFinite(delay) ? Math.max(0, delay) : 0;
+            }
         }
         return error;
     }

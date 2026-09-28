@@ -7,7 +7,7 @@
 const SEALARCA_I18N = {
     // --- 🇫🇷 Français ---
     fr: {
-        extraction: {"tooLarge": "Le tableau extrait dépasse la limite de 500 000 caractères.", "rows": "{sheet} : seules les {used} premières lignes sur {total} ont été extraites.", "pdf_pages": "Pages sans texte exploitable : {pages}. Aucun OCR intégré ; ces pages ne sont pas transmises comme texte.", "noText": "Ce PDF ne contient aucun texte exploitable. Desk ne fait pas d’OCR. Utilisez une copie avec couche texte."},
+        extraction: {"tooLarge": "Le tableau extrait dépasse la limite de 500 000 caractères.", "rows": "{sheet} : seules les {used} premières lignes sur {total} ont été extraites.", "columns": "{sheet} : colonnes limitées à {used} (contenu tronqué).", "slides": "Seules les {used} premières diapositives sur {total} ont été extraites.", "missing_sheet": "Feuille manquante : {sheet}.", "csv_parse": "CSV : {detail}.", "pdf_pages": "Pages sans texte exploitable : {pages}. Aucun OCR intégré ; ces pages ne sont pas transmises comme texte.", "noText": "Ce PDF ne contient aucun texte exploitable. Desk ne fait pas d’OCR. Utilisez une copie avec couche texte."},
         app: {
             name: 'Sealarca',
             desk: 'Desk',
@@ -29,6 +29,8 @@ const SEALARCA_I18N = {
             copied: 'Copié !',
             delete: 'Supprimer',
             deleteConfirm: 'Voulez-vous supprimer cette consultation ?',
+            contextTooLarge: 'Le contexte dépasse la limite de 250 000 caractères. Réduisez l’historique ou désélectionnez des documents avant de réessayer.',
+            streamInterrupted: 'Réponse interrompue — vérifiez le contenu partiel avant de l’utiliser.',
             you: 'Vous'
         },
         folders: { title: 'Dossiers', new: 'Nouveau dossier', none: 'Aucun dossier', defaultName: 'Nouveau dossier', namePrompt: 'Nom du dossier :', descriptionPrompt: 'Description du dossier :', tagsPrompt: 'Étiquettes séparées par des virgules :', deleteConfirm: 'Supprimer ce dossier, ses conversations et ses documents ?', keepOne: 'Au moins un dossier doit être conservé.' },
@@ -122,7 +124,7 @@ const SEALARCA_I18N = {
 
     // --- 🇩🇪 Deutsch ---
     de: {
-        extraction: {"tooLarge": "Die extrahierte Tabelle überschreitet die Grenze von 500 000 Zeichen.", "rows": "{sheet}: Nur die ersten {used} von {total} Zeilen wurden extrahiert.", "pdf_pages": "Seiten ohne auslesbaren Text: {pages}. Keine integrierte OCR; diese Seiten werden nicht als Text gesendet.", "noText": "Dieses PDF enthält keinen auslesbaren Text. Desk bietet keine OCR. Verwenden Sie eine Kopie mit Textebene."},
+        extraction: {"tooLarge": "Die extrahierte Tabelle überschreitet die Grenze von 500 000 Zeichen.", "rows": "{sheet}: Nur die ersten {used} von {total} Zeilen wurden extrahiert.", "columns": "{sheet}: Spalten auf {used} begrenzt (Inhalt gekürzt).", "slides": "Nur die ersten {used} von {total} Folien wurden extrahiert.", "missing_sheet": "Fehlendes Blatt: {sheet}.", "csv_parse": "CSV: {detail}.", "pdf_pages": "Seiten ohne auslesbaren Text: {pages}. Keine integrierte OCR; diese Seiten werden nicht als Text gesendet.", "noText": "Dieses PDF enthält keinen auslesbaren Text. Desk bietet keine OCR. Verwenden Sie eine Kopie mit Textebene."},
         app: {
             name: 'Sealarca',
             desk: 'Desk',
@@ -144,6 +146,8 @@ const SEALARCA_I18N = {
             copied: 'Kopiert!',
             delete: 'Löschen',
             deleteConfirm: 'Möchten Sie diese Konsultation löschen?',
+            contextTooLarge: 'Der Kontext überschreitet die Grenze von 250.000 Zeichen. Kürzen Sie den Verlauf oder wählen Sie weniger Dokumente aus.',
+            streamInterrupted: 'Antwort unterbrochen — prüfen Sie den Teilauszug, bevor Sie ihn verwenden.',
             you: 'Sie'
         },
         folders: { title: 'Ordner', new: 'Neuer Ordner', none: 'Kein Ordner', defaultName: 'Neuer Ordner', namePrompt: 'Ordnername:', descriptionPrompt: 'Ordnerbeschreibung:', tagsPrompt: 'Kommagetrennte Schlagwörter:', deleteConfirm: 'Diesen Ordner mit Gesprächen und Dokumenten löschen?', keepOne: 'Mindestens ein Ordner muss erhalten bleiben.' },
@@ -237,7 +241,7 @@ const SEALARCA_I18N = {
 
     // --- 🇮🇹 Italiano ---
     it: {
-        extraction: {"tooLarge": "La tabella estratta supera il limite di 500 000 caratteri.", "rows": "{sheet}: estratte solo le prime {used} righe su {total}.", "pdf_pages": "Pagine senza testo estraibile: {pages}. Nessun OCR integrato; queste pagine non vengono inviate come testo.", "noText": "Questo PDF non contiene testo estraibile. Desk non dispone di OCR. Utilizzare una copia con un livello di testo."},
+        extraction: {"tooLarge": "La tabella estratta supera il limite di 500 000 caratteri.", "rows": "{sheet}: estratte solo le prime {used} righe su {total}.", "columns": "{sheet}: colonne limitate a {used} (contenuto troncato).", "slides": "Estratte solo le prime {used} di {total} diapositive.", "missing_sheet": "Foglio mancante: {sheet}.", "csv_parse": "CSV: {detail}.", "pdf_pages": "Pagine senza testo estraibile: {pages}. Nessun OCR integrato; queste pagine non vengono inviate come testo.", "noText": "Questo PDF non contiene testo estraibile. Desk non dispone di OCR. Utilizzare una copia con un livello di testo."},
         app: {
             name: 'Sealarca',
             desk: 'Desk',
@@ -259,6 +263,8 @@ const SEALARCA_I18N = {
             copied: 'Copiato!',
             delete: 'Elimina',
             deleteConfirm: 'Vuoi eliminare questa consultazione?',
+            contextTooLarge: 'Il contesto supera il limite di 250.000 caratteri. Riduci la cronologia o deseleziona alcuni documenti.',
+            streamInterrupted: 'Risposta interrotta — verifica il contenuto parziale prima di usarlo.',
             you: 'Tu'
         },
         folders: { title: 'Cartelle', new: 'Nuova cartella', none: 'Nessuna cartella', defaultName: 'Nuova cartella', namePrompt: 'Nome della cartella:', descriptionPrompt: 'Descrizione della cartella:', tagsPrompt: 'Etichette separate da virgole:', deleteConfirm: 'Eliminare la cartella con conversazioni e documenti?', keepOne: 'Deve rimanere almeno una cartella.' },
@@ -352,7 +358,7 @@ const SEALARCA_I18N = {
 
     // --- 🇬🇧 English ---
     en: {
-        extraction: {"tooLarge": "The extracted table exceeds the 500,000-character limit.", "rows": "{sheet}: only the first {used} of {total} rows were extracted.", "pdf_pages": "Pages without extractable text: {pages}. No built-in OCR; these pages are not sent as text.", "noText": "This PDF has no extractable text. Desk has no OCR. Use a copy with a text layer."},
+        extraction: {"tooLarge": "The extracted table exceeds the 500,000-character limit.", "rows": "{sheet}: only the first {used} of {total} rows were extracted.", "columns": "{sheet}: columns limited to {used} (content truncated).", "slides": "Only the first {used} of {total} slides were extracted.", "missing_sheet": "Missing sheet: {sheet}.", "csv_parse": "CSV: {detail}.", "pdf_pages": "Pages without extractable text: {pages}. No built-in OCR; these pages are not sent as text.", "noText": "This PDF has no extractable text. Desk has no OCR. Use a copy with a text layer."},
         app: {
             name: 'Sealarca',
             desk: 'Desk',
@@ -374,6 +380,8 @@ const SEALARCA_I18N = {
             copied: 'Copied!',
             delete: 'Delete',
             deleteConfirm: 'Do you want to delete this consultation?',
+            contextTooLarge: 'The context exceeds the 250,000-character limit. Reduce the history or deselect documents before trying again.',
+            streamInterrupted: 'Response interrupted — review the partial content before using it.',
             you: 'You'
         },
         folders: { title: 'Folders', new: 'New folder', none: 'No folder', defaultName: 'New folder', namePrompt: 'Folder name:', descriptionPrompt: 'Folder description:', tagsPrompt: 'Comma-separated tags:', deleteConfirm: 'Delete this folder, its conversations and documents?', keepOne: 'At least one folder must remain.' },
@@ -467,7 +475,7 @@ const SEALARCA_I18N = {
 
     // --- 🇪🇸 Español ---
     es: {
-        extraction: {"tooLarge": "La tabla extraída supera el límite de 500 000 caracteres.", "rows": "{sheet}: solo se han extraído las primeras {used} de {total} filas.", "pdf_pages": "Páginas sin texto extraíble: {pages}. Sin OCR integrado; estas páginas no se envían como texto.", "noText": "Este PDF no contiene texto extraíble. Desk no dispone de OCR. Utilice una copia con una capa de texto."},
+        extraction: {"tooLarge": "La tabla extraída supera el límite de 500 000 caracteres.", "rows": "{sheet}: solo se han extraído las primeras {used} de {total} filas.", "columns": "{sheet}: columnas limitadas a {used} (contenido truncado).", "slides": "Solo se han extraído las primeras {used} de {total} diapositivas.", "missing_sheet": "Hoja ausente: {sheet}.", "csv_parse": "CSV: {detail}.", "pdf_pages": "Páginas sin texto extraíble: {pages}. Sin OCR integrado; estas páginas no se envían como texto.", "noText": "Este PDF no contiene texto extraíble. Desk no dispone de OCR. Utilice una copia con una capa de texto."},
         app: {
             name: 'Sealarca',
             desk: 'Desk',
@@ -489,6 +497,8 @@ const SEALARCA_I18N = {
             copied: '¡Copiado!',
             delete: 'Eliminar',
             deleteConfirm: '¿Desea eliminar esta consulta?',
+            contextTooLarge: 'El contexto supera el límite de 250.000 caracteres. Reduzca el historial o deseleccione documentos antes de intentarlo de nuevo.',
+            streamInterrupted: 'Respuesta interrumpida — revise el contenido parcial antes de utilizarlo.',
             you: 'Usted'
         },
         folders: { title: 'Carpetas', new: 'Nueva carpeta', none: 'Sin carpeta', defaultName: 'Nueva carpeta', namePrompt: 'Nombre de la carpeta:', descriptionPrompt: 'Descripción de la carpeta:', tagsPrompt: 'Etiquetas separadas por comas:', deleteConfirm: '¿Eliminar esta carpeta, sus conversaciones y documentos?', keepOne: 'Debe conservarse al menos una carpeta.' },
@@ -580,5 +590,61 @@ const SEALARCA_I18N = {
         }
     }
 };
+
+const SEALARCA_I18N_FALLBACKS = {
+    fr: {
+        'app.streamTimeout': 'Aucune donnée reçue pendant 120 secondes ; la génération a été interrompue. Relancez avec un contexte réduit.',
+        'app.profileUpToDate': 'Fiche déjà à jour.',
+        'app.profileQueued': 'Fiche ajoutée à la queue.',
+        'app.profilesQueued': '{count} fiche(s) ajoutée(s) à la queue.',
+        'app.profilesUpToDate': 'Toutes les fiches sont déjà à jour.',
+        'settings.noModels': 'Aucun modèle disponible pour cette clé API.',
+        'documents.pagesUnavailable': 'Pages non disponibles'
+    },
+    de: {
+        'app.streamTimeout': '120 Sekunden lang wurden keine Daten empfangen; die Generierung wurde unterbrochen. Mit kleinerem Kontext erneut versuchen.',
+        'app.profileUpToDate': 'Profil bereits aktuell.',
+        'app.profileQueued': 'Profil zur Warteschlange hinzugefügt.',
+        'app.profilesQueued': '{count} Profil(e) zur Warteschlange hinzugefügt.',
+        'app.profilesUpToDate': 'Alle Profile sind bereits aktuell.',
+        'settings.noModels': 'Kein Modell für diesen API-Schlüssel verfügbar.',
+        'documents.pagesUnavailable': 'Seiten nicht verfügbar'
+    },
+    it: {
+        'app.streamTimeout': 'Nessun dato ricevuto per 120 secondi; generazione interrotta. Riprova con un contesto ridotto.',
+        'app.profileUpToDate': 'Profilo già aggiornato.',
+        'app.profileQueued': 'Profilo aggiunto alla coda.',
+        'app.profilesQueued': '{count} scheda(e) aggiunta(e) alla coda.',
+        'app.profilesUpToDate': 'Tutti i profili sono già aggiornati.',
+        'settings.noModels': 'Nessun modello disponibile per questa chiave API.',
+        'documents.pagesUnavailable': 'Pagine non disponibili'
+    },
+    en: {
+        'app.streamTimeout': 'No data was received for 120 seconds; generation was interrupted. Retry with a smaller context.',
+        'app.profileUpToDate': 'Profile already up to date.',
+        'app.profileQueued': 'Profile added to the queue.',
+        'app.profilesQueued': '{count} profile(s) added to the queue.',
+        'app.profilesUpToDate': 'All profiles are already up to date.',
+        'settings.noModels': 'No model available for this API key.',
+        'documents.pagesUnavailable': 'Pages unavailable'
+    },
+    es: {
+        'app.streamTimeout': 'No se recibieron datos durante 120 segundos; la generación se interrumpió. Reintente con un contexto reducido.',
+        'app.profileUpToDate': 'Ficha ya actualizada.',
+        'app.profileQueued': 'Ficha añadida a la cola.',
+        'app.profilesQueued': '{count} ficha(s) añadida(s) a la cola.',
+        'app.profilesUpToDate': 'Todas las fichas ya están actualizadas.',
+        'settings.noModels': 'Ningún modelo disponible para esta clave API.',
+        'documents.pagesUnavailable': 'Páginas no disponibles'
+    }
+};
+for (const [lang, entries] of Object.entries(SEALARCA_I18N_FALLBACKS)) {
+    const root = SEALARCA_I18N[lang] || (SEALARCA_I18N[lang] = {});
+    for (const [path, value] of Object.entries(entries)) {
+        const [group, key] = path.split('.');
+        root[group] = root[group] || {};
+        if (typeof root[group][key] !== 'string') root[group][key] = value;
+    }
+}
 
 window.SEALARCA_I18N = SEALARCA_I18N;

@@ -1,5 +1,5 @@
 param(
-    [string]$Version = '1.0.4'
+    [string]$Version = '1.1.0'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -17,6 +17,27 @@ if (Test-Path $stagingRoot) {
 }
 
 New-Item -ItemType Directory -Path $bundleRoot -Force | Out-Null
+
+# Vérifier que vendor/ correspond à vendor/dependencies.json avant de zipper.
+$dependenciesPath = Join-Path (Join-Path $projectRoot 'vendor') 'dependencies.json'
+if (-not (Test-Path -LiteralPath $dependenciesPath)) { throw 'vendor/dependencies.json introuvable. Exécutez npm run vendor:build.' }
+$manifest = Get-Content -LiteralPath $dependenciesPath -Raw | ConvertFrom-Json
+$vendorSha256 = [System.Security.Cryptography.SHA256]::Create()
+try {
+    foreach ($entry in $manifest.files.PSObject.Properties) {
+        $filePath = Join-Path (Join-Path $projectRoot 'vendor') $entry.Name
+        if (-not (Test-Path -LiteralPath $filePath)) { throw "Fichier vendor manquant : $($entry.Name)." }
+        $vendorStream = [System.IO.File]::OpenRead($filePath)
+        try {
+            $computed = ([System.BitConverter]::ToString($vendorSha256.ComputeHash($vendorStream)) -replace '-', '').ToLowerInvariant()
+        } finally {
+            $vendorStream.Dispose()
+        }
+        if ($computed -ne $entry.Value.ToLowerInvariant()) { throw "SHA-256 vendor incohérent pour $($entry.Name). Exécutez npm run vendor:build." }
+    }
+} finally {
+    $vendorSha256.Dispose()
+}
 
 foreach ($directory in @('css', 'images', 'js', 'vendor')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot $directory) -Destination (Join-Path $bundleRoot $directory) -Recurse -Force

@@ -5,7 +5,7 @@
  */
 
 const DB_NAME = 'sealarca_desk_db';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const DEFAULT_FOLDER_ID = 'folder_default';
 const DEFAULT_ROLE_ID = 'role-document-analysis';
 const SYSTEM_ROLE_VERSION = 2;
@@ -126,7 +126,10 @@ function mergeSystemRoles(existingRoles) {
             const systemRole = { ...definition, kind: 'system', systemVersion: SYSTEM_ROLE_VERSION };
             roles.push(systemRole);
             byId.set(systemRole.id, systemRole);
-        } else if (existing.kind === 'system' || (!existing.kind && hasLegacySystemRoleSignature(existing, LEGACY_SYSTEM_ROLE_SIGNATURES[definition.id]))) {
+        } else if (existing.kind === 'system' && existing.systemVersion !== SYSTEM_ROLE_VERSION) {
+            const systemRole = { ...existing, ...definition, kind: 'system', systemVersion: SYSTEM_ROLE_VERSION };
+            byId.set(systemRole.id, systemRole);
+        } else if (!existing.kind && hasLegacySystemRoleSignature(existing, LEGACY_SYSTEM_ROLE_SIGNATURES[definition.id])) {
             const systemRole = { ...existing, ...definition, kind: 'system', systemVersion: SYSTEM_ROLE_VERSION };
             byId.set(systemRole.id, systemRole);
         } else if (!existing.kind) {
@@ -140,9 +143,11 @@ class SealarcaDB {
     constructor() {
         this.db = null;
         this.initPromise = null;
+        this.requiresReload = false;
     }
 
     async init() {
+        if (this.requiresReload) throw new Error('La base locale a changé de version. Rechargez Sealarca-Desk pour continuer.');
         if (this.db) return this.db;
         if (this.initPromise) return this.initPromise;
 
@@ -238,7 +243,30 @@ class SealarcaDB {
                         const conversation = cursor.value;
                         if (!conversation.folderId) {
                             conversation.folderId = DEFAULT_FOLDER_ID;
-                            cursor.update(conversation);
+                            const updateRequest = cursor.update(conversation);
+                            updateRequest.onerror = () => { try { request.transaction.abort(); } catch (_) {} };
+                        }
+                        cursor.continue();
+                    };
+                }
+
+                if (oldVersion > 0 && oldVersion < 5 && db.objectStoreNames.contains('processingJobs')) {
+                    const now = Date.now();
+                    const jobCursor = tx.objectStore('processingJobs').openCursor();
+                    jobCursor.onsuccess = cursorEvent => {
+                        const cursor = cursorEvent.target.result;
+                        if (!cursor) return;
+                        const job = cursor.value;
+                        if (job.status === 'running') {
+                            job.status = 'pending';
+                            job.nextRunAt = now;
+                            job.startedAt = null;
+                            job.leaseOwner = null;
+                            job.leaseToken = null;
+                            job.leaseExpiresAt = null;
+                            job.checkpoint = { stage: 'recovered_after_v4', previous: job.checkpoint || null, at: now };
+                            const updateRequest = cursor.update(job);
+                            updateRequest.onerror = () => { try { request.transaction.abort(); } catch (_) {} };
                         }
                         cursor.continue();
                     };
@@ -247,7 +275,13 @@ class SealarcaDB {
 
             request.onsuccess = async (event) => {
                 this.db = event.target.result;
-                this.db.onversionchange = () => this.db.close();
+                this.db.onversionchange = () => {
+                    const closedDatabase = this.db;
+                    this.db = null;
+                    this.initPromise = null;
+                    this.requiresReload = true;
+                    closedDatabase?.close();
+                };
                 try {
                     await this._ensureDefaultFolder();
                     await this._initDefaultRoles();
@@ -287,11 +321,28 @@ class SealarcaDB {
             }
             if (request) {
                 request.onsuccess = () => { requestResult = request.result; };
-                request.onerror = () => reject(request.error);
+                request.onerror = () => reject(request.error || new Error('Opération IndexedDB impossible.'));
             }
             tx.oncomplete = () => resolve(request ? requestResult : true);
-            tx.onerror = () => reject(tx.error);
+            tx.onerror = () => reject(tx.error || new Error('Transaction IndexedDB annulée.'));
             tx.onabort = () => reject(tx.error || new Error('Transaction IndexedDB annulée.'));
+        });
+    }
+
+    _transaction(storeNames, mode, setup) {
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction(storeNames, mode);
+            let result;
+            let failure = null;
+            const fail = error => {
+                failure = error || new Error('Transaction IndexedDB annulée.');
+                try { tx.abort(); } catch (_) { reject(failure); }
+            };
+            tx.oncomplete = () => resolve(result);
+            tx.onerror = () => reject(failure || tx.error);
+            tx.onabort = () => reject(failure || tx.error || new Error('Transaction IndexedDB annulée.'));
+            try { setup(tx, value => { result = value; }, fail); }
+            catch (error) { fail(error); }
         });
     }
 
@@ -318,8 +369,23 @@ class SealarcaDB {
 
     async _initDefaultRoles() {
         const existingRoles = await this._getAllDirect('roles');
+        const existingById = new Map(existingRoles.map(role => [role.id, role]));
         const mergedRoles = mergeSystemRoles(existingRoles);
-        await Promise.all(mergedRoles.map(role => this._request('roles', 'readwrite', store => store.put(role))));
+        const changed = mergedRoles.filter(role => {
+            const existing = existingById.get(role.id);
+            if (!existing) return true;
+            try { return JSON.stringify(existing) !== JSON.stringify(role); }
+            catch (_) { return true; }
+        });
+        if (!changed.length) return;
+        await this._transaction('roles', 'readwrite', (tx, setResult, fail) => {
+            const store = tx.objectStore('roles');
+            for (const role of changed) {
+                const request = store.put(role);
+                request.onerror = () => fail(request.error || new Error('Synchronisation des modes impossible.'));
+            }
+            setResult(true);
+        });
     }
 
     async getSetting(key, defaultValue = null) {
@@ -369,47 +435,77 @@ class SealarcaDB {
 
     async deleteFolder(id) {
         await this.init();
-        const folders = await this.getFolders();
-        if (id === DEFAULT_FOLDER_ID && folders.length <= 1) throw new Error('Au moins un dossier doit être conservé.');
-        const conversations = await this.getConversations(id);
-        const documents = await this.getDocuments(id);
-        const processingJobs = await this.getProcessingJobs(id);
         return new Promise((resolve, reject) => {
             const tx = this.db.transaction(['folders', 'conversations', 'messages', 'documents', 'documentChunks', 'documentProfiles', 'processingJobs'], 'readwrite');
-            tx.objectStore('folders').delete(id);
-            const convStore = tx.objectStore('conversations');
-            const msgIndex = tx.objectStore('messages').index('conversationId');
-            conversations.forEach(conversation => {
-                convStore.delete(conversation.id);
-                const req = msgIndex.openCursor(IDBKeyRange.only(conversation.id));
-                req.onsuccess = event => {
-                    const cursor = event.target.result;
-                    if (cursor) { cursor.delete(); cursor.continue(); }
+            let failure = null;
+            let missing = false;
+            const abortWith = error => {
+                failure = error;
+                try { tx.abort(); } catch (_) { reject(error); }
+            };
+            tx.oncomplete = () => resolve(!missing);
+            tx.onerror = () => reject(failure || tx.error || new Error('Suppression du dossier annulée.'));
+            tx.onabort = () => reject(failure || tx.error || new Error('Suppression du dossier annulée.'));
+
+            const folders = tx.objectStore('folders');
+            const folderRequest = folders.get(id);
+            folderRequest.onerror = () => abortWith(folderRequest.error || new Error('Lecture du dossier impossible.'));
+            folderRequest.onsuccess = () => {
+                if (!folderRequest.result) { missing = true; return; }
+                const allFoldersRequest = folders.getAll();
+                allFoldersRequest.onerror = () => abortWith(allFoldersRequest.error || new Error('Lecture des dossiers impossible.'));
+                allFoldersRequest.onsuccess = () => {
+                    if (id === DEFAULT_FOLDER_ID && allFoldersRequest.result.length <= 1) {
+                        abortWith(new Error('Au moins un dossier doit être conservé.'));
+                        return;
+                    }
+
+                    const conversations = tx.objectStore('conversations');
+                    const documents = tx.objectStore('documents');
+                    const jobs = tx.objectStore('processingJobs');
+                    const profiles = tx.objectStore('documentProfiles');
+                    const chunks = tx.objectStore('documentChunks');
+                    const removeIndexedRecords = (index, key) => {
+                        const request = index.openCursor(IDBKeyRange.only(key));
+                        request.onerror = () => abortWith(request.error || new Error('Suppression en cascade impossible.'));
+                        request.onsuccess = event => {
+                            const cursor = event.target.result;
+                            if (!cursor) return;
+                            const deleteRequest = cursor.delete();
+                            deleteRequest.onerror = () => abortWith(deleteRequest.error || new Error('Suppression en cascade impossible.'));
+                            cursor.continue();
+                        };
+                    };
+
+                    const conversationsRequest = conversations.index('folderId').getAll(id);
+                    conversationsRequest.onerror = () => abortWith(conversationsRequest.error || new Error('Lecture des conversations impossible.'));
+                    conversationsRequest.onsuccess = () => {
+                        const messages = tx.objectStore('messages');
+                        for (const conversation of conversationsRequest.result) {
+                            conversations.delete(conversation.id);
+                            removeIndexedRecords(messages.index('conversationId'), conversation.id);
+                        }
+                    };
+
+                    const documentsRequest = documents.index('folderId').getAll(id);
+                    documentsRequest.onerror = () => abortWith(documentsRequest.error || new Error('Lecture des documents impossible.'));
+                    documentsRequest.onsuccess = () => {
+                        for (const document of documentsRequest.result) {
+                            documents.delete(document.id);
+                            profiles.delete(document.id);
+                            removeIndexedRecords(jobs.index('documentId'), document.id);
+                            removeIndexedRecords(chunks.index('documentId'), document.id);
+                        }
+                    };
+
+                    const jobsRequest = jobs.index('folderId').getAll(id);
+                    jobsRequest.onerror = () => abortWith(jobsRequest.error || new Error('Lecture des jobs impossible.'));
+                    jobsRequest.onsuccess = () => jobsRequest.result.forEach(job => jobs.delete(job.id));
+                    removeIndexedRecords(chunks.index('folderId'), id);
+                    removeIndexedRecords(profiles.index('folderId'), id);
+                    folders.delete(id);
                 };
-            });
-            const docStore = tx.objectStore('documents');
-            const chunkIndex = tx.objectStore('documentChunks').index('documentId');
-            const profileStore = tx.objectStore('documentProfiles');
-            const jobStore = tx.objectStore('processingJobs');
-            const jobIndex = tx.objectStore('processingJobs').index('documentId');
-            processingJobs.forEach(job => jobStore.delete(job.id));
-            documents.forEach(document => {
-                docStore.delete(document.id);
-                profileStore.delete(document.id);
-                const jobReq = jobIndex.openCursor(IDBKeyRange.only(document.id));
-                jobReq.onsuccess = event => {
-                    const cursor = event.target.result;
-                    if (cursor) { cursor.delete(); cursor.continue(); }
-                };
-                const req = chunkIndex.openCursor(IDBKeyRange.only(document.id));
-                req.onsuccess = event => {
-                    const cursor = event.target.result;
-                    if (cursor) { cursor.delete(); cursor.continue(); }
-                };
-            });
-            tx.oncomplete = () => resolve(true);
-            tx.onerror = () => reject(tx.error);
-            tx.onabort = () => reject(tx.error || new Error('Suppression du dossier annulée.'));
+            };
         });
     }
 
@@ -426,7 +522,7 @@ class SealarcaDB {
         return (await this._request('conversations', 'readonly', store => store.get(id))) || null;
     }
 
-    async saveConversation(conversation) {
+    async saveConversation(conversation, { allowCreate = false } = {}) {
         await this.init();
         const now = Date.now();
         const value = {
@@ -435,7 +531,25 @@ class SealarcaDB {
             createdAt: conversation.createdAt || now,
             updatedAt: now
         };
-        await this._request('conversations', 'readwrite', store => store.put(value));
+        await this._transaction(['folders', 'conversations'], 'readwrite', (tx, setResult, fail) => {
+            const folderRequest = tx.objectStore('folders').get(value.folderId);
+            const conversationRequest = tx.objectStore('conversations').get(value.id);
+            let folderRecord;
+            let conversationRecord;
+            let remaining = 2;
+            const ready = () => {
+                remaining -= 1;
+                if (remaining) return;
+                if (!folderRecord) { fail(new Error('Le dossier de cette conversation n’existe plus.')); return; }
+                if (!conversationRecord && !allowCreate) { fail(new Error('Cette conversation a été supprimée.')); return; }
+                tx.objectStore('conversations')[conversationRecord ? 'put' : 'add'](value);
+                setResult(value);
+            };
+            folderRequest.onerror = () => fail(folderRequest.error);
+            conversationRequest.onerror = () => fail(conversationRequest.error);
+            folderRequest.onsuccess = () => { folderRecord = folderRequest.result; ready(); };
+            conversationRequest.onsuccess = () => { conversationRecord = conversationRequest.result; ready(); };
+        });
         return value;
     }
 
@@ -464,7 +578,22 @@ class SealarcaDB {
     async saveMessage(message) {
         await this.init();
         const value = { ...message, createdAt: message.createdAt || Date.now() };
-        await this._request('messages', 'readwrite', store => store.put(value));
+        await this._transaction(['conversations', 'messages'], 'readwrite', (tx, setResult, fail) => {
+            if (!value.id || !value.conversationId) { fail(new Error('Identifiant de message ou de conversation manquant.')); return; }
+            const conversationRequest = tx.objectStore('conversations').get(value.conversationId);
+            conversationRequest.onerror = () => fail(conversationRequest.error || new Error('Lecture de la conversation impossible.'));
+            conversationRequest.onsuccess = () => {
+                const conversation = conversationRequest.result;
+                if (!conversation) { fail(new Error('La conversation de ce message n’existe plus.')); return; }
+                const addRequest = tx.objectStore('messages').add(value);
+                addRequest.onerror = () => fail(addRequest.error || new Error('Enregistrement du message impossible (collision d’identifiant ?).'));
+                addRequest.onsuccess = () => {
+                    const bumpRequest = tx.objectStore('conversations').put({ ...conversation, updatedAt: Date.now() });
+                    bumpRequest.onerror = () => fail(bumpRequest.error || new Error('Actualisation de la conversation impossible.'));
+                };
+                setResult(value);
+            };
+        });
         return value;
     }
 
@@ -484,7 +613,21 @@ class SealarcaDB {
     async getDocumentsByIds(ids) {
         await this.init();
         const uniqueIds = [...new Set((ids || []).filter(Boolean))];
-        return Promise.all(uniqueIds.map(id => this.getDocument(id))).then(items => items.filter(Boolean));
+        if (!uniqueIds.length) return [];
+        return this._transaction('documents', 'readonly', (tx, setResult, fail) => {
+            const store = tx.objectStore('documents');
+            const results = new Array(uniqueIds.length);
+            let remaining = uniqueIds.length;
+            uniqueIds.forEach((id, index) => {
+                const request = store.get(id);
+                request.onerror = () => fail(request.error || new Error('Lecture document impossible.'));
+                request.onsuccess = () => {
+                    results[index] = request.result || null;
+                    remaining -= 1;
+                    if (!remaining) setResult(results.filter(Boolean));
+                };
+            });
+        });
     }
 
     async findDocumentByHash(folderId, hash) {
@@ -511,7 +654,15 @@ class SealarcaDB {
             createdAt: document.createdAt || now,
             updatedAt: now
         };
-        await this._request('documents', 'readwrite', store => store.put(value));
+        await this._transaction(['folders', 'documents'], 'readwrite', (tx, setResult, fail) => {
+            const folderRequest = tx.objectStore('folders').get(value.folderId);
+            folderRequest.onerror = () => fail(folderRequest.error);
+            folderRequest.onsuccess = () => {
+                if (!folderRequest.result) { fail(new Error('Le dossier de ce document n’existe plus.')); return; }
+                tx.objectStore('documents').put(value);
+                setResult(value);
+            };
+        });
         return value;
     }
 
@@ -545,33 +696,56 @@ class SealarcaDB {
 
     async replaceDocumentChunks(document, chunks) {
         await this.init();
+        if (!document?.id) throw new Error('Identifiant de document manquant.');
         return new Promise((resolve, reject) => {
             const tx = this.db.transaction(['documents', 'documentChunks'], 'readwrite');
             const chunkStore = tx.objectStore('documentChunks');
-            const req = chunkStore.index('documentId').openCursor(IDBKeyRange.only(document.id));
-            req.onsuccess = event => {
-                const cursor = event.target.result;
-                if (cursor) { cursor.delete(); cursor.continue(); return; }
-                (chunks || []).forEach((chunk, index) => chunkStore.put({
-                    ...chunk,
-                    id: chunk.id || `chunk_${document.id}_${index}`,
-                    documentId: document.id,
-                    folderId: document.folderId,
-                    index,
-                    derivedFrom: 'markdown',
-                    createdAt: chunk.createdAt || Date.now()
-                }));
-                tx.objectStore('documents').put({
-                    ...document,
-                    derivations: {
-                        ...(document.derivations || {}),
-                        chunks: { status: 'ready', count: (chunks || []).length, source: 'markdown', updatedAt: Date.now() }
-                    },
-                    updatedAt: Date.now()
-                });
+            const documentStore = tx.objectStore('documents');
+            const checkRequest = documentStore.get(document.id);
+            let failure = null;
+            const abortWith = error => { failure = error; try { tx.abort(); } catch (_) { reject(error); } };
+            checkRequest.onerror = () => abortWith(checkRequest.error || new Error('Lecture du document impossible.'));
+            checkRequest.onsuccess = () => {
+                if (!checkRequest.result) { abortWith(new Error('Le document n’existe plus.')); return; }
+                const now = Date.now();
+                const req = chunkStore.index('documentId').openCursor(IDBKeyRange.only(document.id));
+                req.onerror = () => abortWith(req.error || new Error('Lecture des chunks impossible.'));
+                req.onsuccess = event => {
+                    const cursor = event.target.result;
+                    if (cursor) {
+                        const deleteRequest = cursor.delete();
+                        deleteRequest.onerror = () => abortWith(deleteRequest.error || new Error('Suppression des chunks impossible.'));
+                        cursor.continue();
+                        return;
+                    }
+                    (chunks || []).forEach((chunk, index) => {
+                        const putRequest = chunkStore.add({
+                            ...chunk,
+                            id: `chunk_${document.id}_${index}`,
+                            documentId: document.id,
+                            folderId: document.folderId,
+                            index,
+                            derivedFrom: 'markdown',
+                            createdAt: chunk.createdAt || now
+                        });
+                        putRequest.onerror = () => abortWith(putRequest.error || new Error('Écriture des chunks impossible.'));
+                    });
+                    const docRequest = documentStore.put({
+                        ...checkRequest.result,
+                        ...document,
+                        derivations: {
+                            ...(checkRequest.result.derivations || {}),
+                            ...(document.derivations || {}),
+                            chunks: { status: 'ready', count: (chunks || []).length, source: 'markdown', updatedAt: now }
+                        },
+                        updatedAt: now
+                    });
+                    docRequest.onerror = () => abortWith(docRequest.error || new Error('Actualisation du document impossible.'));
+                };
             };
             tx.oncomplete = () => resolve(true);
-            tx.onerror = () => reject(tx.error);
+            tx.onerror = () => reject(failure || tx.error || new Error('Remplacement des chunks annulé.'));
+            tx.onabort = () => reject(failure || tx.error || new Error('Remplacement des chunks annulé.'));
         });
     }
 
@@ -604,8 +778,70 @@ class SealarcaDB {
             createdAt: profile.createdAt || now,
             updatedAt: now
         };
-        await this._request('documentProfiles', 'readwrite', store => store.put(value));
+        await this._transaction(['documents', 'documentProfiles'], 'readwrite', (tx, setResult, fail) => {
+            const documentRequest = tx.objectStore('documents').get(value.documentId);
+            documentRequest.onerror = () => fail(documentRequest.error);
+            documentRequest.onsuccess = () => {
+                if (!documentRequest.result) { fail(new Error('Le document associé à cette fiche n’existe plus.')); return; }
+                tx.objectStore('documentProfiles').put(value);
+                setResult(value);
+            };
+        });
         return value;
+    }
+
+    async saveDocumentProfileIfJobOwner(profile, jobId, ownerId, leaseToken) {
+        await this.init();
+        if (!profile?.documentId || !jobId || !ownerId || !leaseToken) return false;
+        const now = Date.now();
+        const value = {
+            ...profile,
+            status: profile.status || 'valid',
+            schemaVersion: Number(profile.schemaVersion) || 1,
+            people: Array.isArray(profile.people) ? profile.people : [],
+            organizations: Array.isArray(profile.organizations) ? profile.organizations : [],
+            importantDates: Array.isArray(profile.importantDates) ? profile.importantDates : [],
+            importantItems: Array.isArray(profile.importantItems) ? profile.importantItems : [],
+            createdAt: profile.createdAt || now,
+            updatedAt: now
+        };
+        return this._transaction(['documents', 'processingJobs', 'documentProfiles'], 'readwrite', (tx, setResult, fail) => {
+            const documents = tx.objectStore('documents');
+            const jobs = tx.objectStore('processingJobs');
+            const documentRequest = documents.get(value.documentId);
+            const jobRequest = jobs.get(jobId);
+            let documentRecord;
+            let jobRecord;
+            let remaining = 2;
+            const ready = () => {
+                remaining -= 1;
+                if (remaining) return;
+                if (!documentRecord || !jobRecord || jobRecord.documentId !== value.documentId
+                    || jobRecord.status !== 'running' || jobRecord.leaseOwner !== ownerId
+                    || jobRecord.leaseToken !== leaseToken || Number(jobRecord.leaseExpiresAt) <= now) {
+                    setResult(false);
+                    return;
+                }
+                tx.objectStore('documentProfiles').put(value);
+                jobs.put({
+                    ...jobRecord,
+                    status: 'completed',
+                    completedAt: now,
+                    nextRunAt: null,
+                    lastError: null,
+                    leaseOwner: null,
+                    leaseToken: null,
+                    leaseExpiresAt: null,
+                    checkpoint: { stage: 'profile_saved', at: now },
+                    updatedAt: now
+                });
+                setResult(true);
+            };
+            documentRequest.onerror = () => fail(documentRequest.error);
+            jobRequest.onerror = () => fail(jobRequest.error);
+            documentRequest.onsuccess = () => { documentRecord = documentRequest.result; ready(); };
+            jobRequest.onsuccess = () => { jobRecord = jobRequest.result; ready(); };
+        });
     }
 
     async deleteDocumentProfile(documentId) {
@@ -639,24 +875,189 @@ class SealarcaDB {
             createdAt: job.createdAt || now,
             updatedAt: now
         };
-        await this._request('processingJobs', 'readwrite', store => store.put(value));
+        if (value.documentId) {
+            await this._transaction(['documents', 'processingJobs'], 'readwrite', (tx, setResult, fail) => {
+                const request = tx.objectStore('documents').get(value.documentId);
+                request.onerror = () => fail(request.error);
+                request.onsuccess = () => {
+                    if (!request.result) { fail(new Error('Le document associé à ce job n’existe plus.')); return; }
+                    tx.objectStore('processingJobs').put(value);
+                    setResult(value);
+                };
+            });
+        } else {
+            await this._request('processingJobs', 'readwrite', store => store.put(value));
+        }
         return value;
     }
 
     async enqueueProcessingJob(job) {
         await this.init();
-        const existing = (await this._request('processingJobs', 'readonly', store => store.index('documentId').getAll(job.documentId)))
-            .find(item => item.type === job.type && item.inputFingerprint === job.inputFingerprint && ['pending', 'running'].includes(item.status));
-        if (existing) return existing;
         const now = Date.now();
-        return this.saveProcessingJob({
+        const value = {
             ...job,
-            id: job.id || 'job_' + now + '_' + Math.random().toString(36).slice(2, 9),
+            id: job.id || 'job_' + now + '_' + Math.random().toString(36).slice(2, 12),
             status: 'pending',
             attempts: 0,
+            maxAttempts: Math.max(1, Number(job.maxAttempts) || 5),
             nextRunAt: now,
+            leaseOwner: null,
+            leaseToken: null,
+            leaseExpiresAt: null,
             checkpoint: { stage: 'queued', at: now },
-            createdAt: now
+            createdAt: now,
+            updatedAt: now
+        };
+        return this._transaction(['documents', 'processingJobs'], 'readwrite', (tx, setResult, fail) => {
+            const store = tx.objectStore('processingJobs');
+            const documentRequest = tx.objectStore('documents').get(job.documentId);
+            documentRequest.onerror = () => fail(documentRequest.error);
+            documentRequest.onsuccess = () => {
+                if (!documentRequest.result) { fail(new Error('Le document associé à ce job n’existe plus.')); return; }
+                const request = store.index('documentId').getAll(job.documentId);
+                request.onerror = () => fail(request.error || new Error('Lecture des jobs impossible.'));
+                request.onsuccess = () => {
+                    if (typeof job.inputFingerprint === 'string' && job.inputFingerprint) {
+                        const existing = request.result.find(item => item.type === job.type
+                            && item.inputFingerprint === job.inputFingerprint
+                            && ['pending', 'running'].includes(item.status));
+                        if (existing) { setResult(existing); return; }
+                    }
+                    const addRequest = store.add(value);
+                    addRequest.onerror = () => {
+                        if (addRequest.error?.name === 'ConstraintError') {
+                            value.id = 'job_' + Date.now() + '_' + Math.random().toString(36).slice(2, 12);
+                            const retryRequest = store.add(value);
+                            retryRequest.onerror = () => fail(retryRequest.error || new Error('Création du job impossible.'));
+                            retryRequest.onsuccess = () => setResult(value);
+                            return;
+                        }
+                        fail(addRequest.error || new Error('Création du job impossible.'));
+                    };
+                    addRequest.onsuccess = () => setResult(value);
+                };
+            };
+        });
+    }
+
+    async claimRunnableProcessingJobs(now = Date.now(), limit = 2, ownerId, leaseMs = 180000) {
+        await this.init();
+        if (!ownerId) throw new Error('Propriétaire de job manquant.');
+        const leaseUntil = now + Math.max(30000, Number(leaseMs) || 180000);
+        return this._transaction('processingJobs', 'readwrite', (tx, setResult, fail) => {
+            const store = tx.objectStore('processingJobs');
+            const request = store.index('status').getAll('pending');
+            request.onerror = () => fail(request.error || new Error('Lecture des jobs impossible.'));
+            request.onsuccess = () => {
+                const due = request.result
+                    .filter(job => (!job.nextRunAt || job.nextRunAt <= now) && (Number(job.attempts) || 0) < Math.max(1, Number(job.maxAttempts) || 5))
+                    .sort((a, b) => (a.nextRunAt || 0) - (b.nextRunAt || 0) || (a.createdAt || 0) - (b.createdAt || 0))
+                    .slice(0, Math.max(1, Number(limit) || 1));
+                const claimed = due.map(job => {
+                    const attempt = Number(job.attempts || 0) + 1;
+                    const value = {
+                        ...job,
+                        status: 'running',
+                        attempts: attempt,
+                        startedAt: now,
+                        leaseOwner: ownerId,
+                        leaseToken: `${ownerId}:${now}:${Math.random().toString(36).slice(2, 12)}`,
+                        leaseExpiresAt: leaseUntil,
+                        checkpoint: { stage: 'request_started', attempt, at: now },
+                        updatedAt: now
+                    };
+                    store.put(value);
+                    return value;
+                });
+                setResult(claimed);
+            };
+        });
+    }
+
+    async renewProcessingJobLease(jobId, ownerId, leaseToken, now = Date.now(), leaseMs = 180000) {
+        await this.init();
+        return this._transaction('processingJobs', 'readwrite', (tx, setResult, fail) => {
+            const store = tx.objectStore('processingJobs');
+            const request = store.get(jobId);
+            request.onerror = () => fail(request.error);
+            request.onsuccess = () => {
+                const job = request.result;
+                if (!job || job.status !== 'running' || job.leaseOwner !== ownerId || job.leaseToken !== leaseToken) {
+                    setResult(false);
+                    return;
+                }
+                job.leaseExpiresAt = now + Math.max(30000, Number(leaseMs) || 180000);
+                job.updatedAt = now;
+                store.put(job);
+                setResult(true);
+            };
+        });
+    }
+
+    async updateProcessingJobIfOwner(jobId, ownerId, leaseToken, changes) {
+        await this.init();
+        const now = Date.now();
+        return this._transaction('processingJobs', 'readwrite', (tx, setResult, fail) => {
+            const store = tx.objectStore('processingJobs');
+            const request = store.get(jobId);
+            request.onerror = () => fail(request.error || new Error('Lecture du job impossible.'));
+            request.onsuccess = () => {
+                const job = request.result;
+                if (!job || job.status !== 'running' || job.leaseOwner !== ownerId || job.leaseToken !== leaseToken) {
+                    setResult(false);
+                    return;
+                }
+                const nextStatus = changes?.status ?? job.status;
+                const terminal = ['completed', 'failed', 'cancelled'].includes(nextStatus);
+                const value = {
+                    ...job,
+                    ...changes,
+                    ...(terminal
+                        ? { leaseOwner: null, leaseToken: null, leaseExpiresAt: null }
+                        : { leaseExpiresAt: now + 180000 }),
+                    updatedAt: now
+                };
+                const putRequest = store.put(value);
+                putRequest.onerror = () => fail(putRequest.error || new Error('Actualisation du job impossible.'));
+                setResult(value);
+            };
+        });
+    }
+
+    async cancelProcessingJob(id) {
+        await this.init();
+        const now = Date.now();
+        return this._transaction('processingJobs', 'readwrite', (tx, setResult, fail) => {
+            const store = tx.objectStore('processingJobs');
+            const request = store.get(id);
+            request.onerror = () => fail(request.error);
+            request.onsuccess = () => {
+                const job = request.result;
+                if (!job || !['pending', 'running'].includes(job.status)) { setResult(null); return; }
+                const value = { ...job, status: 'cancelled', leaseOwner: null, leaseToken: null, leaseExpiresAt: null,
+                    checkpoint: { stage: 'cancelled', at: now }, updatedAt: now };
+                store.put(value);
+                setResult(value);
+            };
+        });
+    }
+
+    async retryProcessingJob(id) {
+        await this.init();
+        const now = Date.now();
+        return this._transaction('processingJobs', 'readwrite', (tx, setResult, fail) => {
+            const store = tx.objectStore('processingJobs');
+            const request = store.get(id);
+            request.onerror = () => fail(request.error);
+            request.onsuccess = () => {
+                const job = request.result;
+                if (!job || !['failed', 'cancelled'].includes(job.status)) { setResult(null); return; }
+                const value = { ...job, status: 'pending', attempts: 0, nextRunAt: now, lastError: null,
+                    leaseOwner: null, leaseToken: null, leaseExpiresAt: null,
+                    checkpoint: { stage: 'queued_again', at: now }, updatedAt: now };
+                store.put(value);
+                setResult(value);
+            };
         });
     }
 
@@ -664,23 +1065,39 @@ class SealarcaDB {
         await this.init();
         const pending = await this._request('processingJobs', 'readonly', store => store.index('status').getAll('pending'));
         return pending
-            .filter(job => !job.nextRunAt || job.nextRunAt <= now)
+            .filter(job => (!job.nextRunAt || job.nextRunAt <= now) && (Number(job.attempts) || 0) < Math.max(1, Number(job.maxAttempts) || 5))
             .sort((a, b) => (a.nextRunAt || 0) - (b.nextRunAt || 0) || (a.createdAt || 0) - (b.createdAt || 0))
             .slice(0, Math.max(1, Number(limit) || 1));
     }
 
     async recoverInterruptedJobs() {
         await this.init();
-        const running = await this._request('processingJobs', 'readonly', store => store.index('status').getAll('running'));
-        for (const job of running) {
-            await this.saveProcessingJob({
-                ...job,
-                status: 'pending',
-                nextRunAt: Date.now(),
-                checkpoint: { stage: 'recovered_after_interruption', previous: job.checkpoint || null, at: Date.now() }
-            });
-        }
-        return running.length;
+        const now = Date.now();
+        return this._transaction('processingJobs', 'readwrite', (tx, setResult, fail) => {
+            const store = tx.objectStore('processingJobs');
+            const request = store.index('status').getAll('running');
+            request.onerror = () => fail(request.error || new Error('Lecture des jobs impossible.'));
+            request.onsuccess = () => {
+                let recovered = 0;
+                for (const job of request.result) {
+                    if (Number(job.leaseExpiresAt) > now) continue;
+                    const attempts = Number(job.attempts) || 0;
+                    const maxAttempts = Math.max(1, Number(job.maxAttempts) || 5);
+                    if (attempts >= maxAttempts) {
+                        store.put({ ...job, status: 'failed', nextRunAt: null, leaseOwner: null, leaseToken: null,
+                            leaseExpiresAt: null, lastError: job.lastError || 'Nombre maximal de tentatives atteint.',
+                            checkpoint: { stage: 'exhausted', previous: job.checkpoint || null, at: now }, updatedAt: now });
+                        continue;
+                    }
+                    const delay = Math.min(1000 * Math.pow(2, Math.max(0, attempts)), 5 * 60 * 1000);
+                    store.put({ ...job, status: 'pending', nextRunAt: now + delay, leaseOwner: null, leaseToken: null,
+                        leaseExpiresAt: null,
+                        checkpoint: { stage: 'recovered_after_interruption', previous: job.checkpoint || null, at: now }, updatedAt: now });
+                    recovered += 1;
+                }
+                setResult(recovered);
+            };
+        });
     }
 
     async deleteProcessingJob(id) {
@@ -708,36 +1125,80 @@ class SealarcaDB {
 
     async exportAllData() {
         await this.init();
-        const conversations = await this.getConversations();
-        const messages = {};
-        for (const conversation of conversations) messages[conversation.id] = await this.getMessages(conversation.id);
-        return {
-            version: '3.0',
-            exportedAt: new Date().toISOString(),
-            folders: await this.getFolders(),
-            documents: await this.getDocuments(),
-            documentProfiles: await this.getDocumentProfiles(),
-            processingJobs: await this.getProcessingJobs(),
-            conversations,
-            messages,
-            roles: await this.getRoles()
-        };
+        return this._transaction(['folders', 'conversations', 'messages', 'documents', 'documentChunks', 'documentProfiles', 'processingJobs', 'roles', 'settings'], 'readonly', (tx, setResult, fail) => {
+            const getAll = (storeName, indexName, key) => new Promise((resolve, reject) => {
+                const target = indexName ? tx.objectStore(storeName).index(indexName) : tx.objectStore(storeName);
+                const request = key !== undefined ? target.getAll(key) : target.getAll();
+                request.onerror = () => reject(request.error || new Error('Export impossible.'));
+                request.onsuccess = () => resolve(request.result || []);
+            });
+            (async () => {
+                try {
+                    const [folders, conversations, documents, chunks, profiles, jobs, roles, settings] = await Promise.all([
+                        getAll('folders'), getAll('conversations'), getAll('documents'), getAll('documentChunks'),
+                        getAll('documentProfiles'), getAll('processingJobs'), getAll('roles'), getAll('settings')
+                    ]);
+                    const messages = {};
+                    for (const conversation of conversations) {
+                        messages[conversation.id] = await getAll('messages', 'conversationId', conversation.id);
+                    }
+                    setResult({
+                        version: '5.0',
+                        exportedAt: new Date().toISOString(),
+                        folders, documents, documentChunks: chunks, documentProfiles: profiles,
+                        processingJobs: jobs, conversations, messages, roles,
+                        settings: settings
+                            .filter(entry => entry.key !== 'sealarca_api_key')
+                            .map(entry => ({ key: entry.key, value: entry.value }))
+                    });
+                } catch (error) { fail(error); }
+            })();
+        });
     }
 
     async importData(data) {
         if (!data || !Array.isArray(data.conversations)) throw new Error('Format de sauvegarde Sealarca invalide.');
         await this.init();
-        if (Array.isArray(data.folders)) for (const folder of data.folders) await this.saveFolder(folder);
-        if (Array.isArray(data.documents)) for (const document of data.documents) await this.saveDocument(document);
-        if (Array.isArray(data.documentProfiles)) for (const profile of data.documentProfiles) await this.saveDocumentProfile(profile);
-        if (Array.isArray(data.processingJobs)) for (const job of data.processingJobs) await this.saveProcessingJob(job);
-        for (const conversation of data.conversations) {
-            await this.saveConversation({ ...conversation, folderId: conversation.folderId || DEFAULT_FOLDER_ID });
-            const messages = data.messages && data.messages[conversation.id];
-            if (Array.isArray(messages)) for (const message of messages) await this.saveMessage(message);
+        const folders = Array.isArray(data.folders) ? data.folders : [];
+        const documents = Array.isArray(data.documents) ? data.documents : [];
+        const profiles = Array.isArray(data.documentProfiles) ? data.documentProfiles : [];
+        const jobs = Array.isArray(data.processingJobs) ? data.processingJobs : [];
+        const roles = Array.isArray(data.roles) ? data.roles : [];
+        const chunks = Array.isArray(data.documentChunks) ? data.documentChunks : [];
+        for (const folder of folders) {
+            if (!folder?.id) throw new Error('Dossier invalide dans la sauvegarde.');
         }
-        if (Array.isArray(data.roles)) for (const role of data.roles) await this.saveRole(role);
-        return true;
+        for (const conversation of data.conversations) {
+            if (!conversation?.id) throw new Error('Conversation invalide dans la sauvegarde.');
+            const list = data.messages?.[conversation.id];
+            if (list !== undefined && !Array.isArray(list)) throw new Error('Messages invalides dans la sauvegarde.');
+        }
+        return this._transaction(['folders', 'conversations', 'messages', 'documents', 'documentChunks', 'documentProfiles', 'processingJobs', 'roles', 'settings'], 'readwrite', (tx, setResult, fail) => {
+            const putAll = (storeName, values) => {
+                for (const value of values) {
+                    const request = tx.objectStore(storeName).put(value);
+                    request.onerror = () => fail(request.error || new Error('Import impossible.'));
+                }
+            };
+            try {
+                putAll('folders', folders);
+                putAll('documents', documents);
+                putAll('documentChunks', chunks);
+                putAll('documentProfiles', profiles);
+                putAll('processingJobs', jobs);
+                putAll('conversations', data.conversations);
+                for (const conversation of data.conversations) {
+                    const list = data.messages?.[conversation.id];
+                    if (Array.isArray(list)) putAll('messages', list);
+                }
+                putAll('roles', roles);
+                if (Array.isArray(data.settings)) {
+                    putAll('settings', data.settings.filter(entry => entry?.key !== 'sealarca_api_key'));
+                }
+                tx.objectStore('settings').delete('sealarca_api_key');
+                setResult(true);
+            } catch (error) { fail(error); }
+        });
     }
 }
 

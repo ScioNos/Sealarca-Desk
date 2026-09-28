@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "files": {
+    "pdf.min.js": "a4f96a7757673b781b4d8d4ea1bd80d3c2b43a95033a8e36122ab05405abba0c",
+    "pdf.worker.min.js": "6995d31381e0ecb164748d519b2736a93d5537255ead670b6314d5a4827fc03f",
+    "marked.min.js": "7a1f8c5e7226b75ff16644bdb2c0130d2ae7371e7ea3106c2d6dac77ab0ff7b6",
+    "purify.min.js": "2c90a9b46d6463f26038a29b686e82bc91de01fdac9d5229e7cfe3b360134ea2",
+    "jszip.min.js": "7f839b2d4688b845c105ebf5d2f9803075f91ea0fe72bdaac176c3a04dd3d2c1",
+    "alpine-csp.min.js": "2dc79a8143f9e6b4eb817a49933d435bc63cc60e59f2af8a11ded671a853a746"
+  },
+  "dependencies": [
+    {
+      "name": "PDF.js",
+      "package": "pdfjs-dist",
+      "version": "6.3.289",
+      "license": "Apache-2.0",
+      "source": "https://github.com/mozilla/pdf.js",
+      "files": [
+        "pdf.min.js",
+        "pdf.worker.min.js"
+      ],
+      "workerMode": "local main-thread worker bundle loaded before pdf.min.js"
+    },
+    {
+      "name": "Marked",
+      "package": "marked",
+      "version": "18.0.7",
+      "license": "MIT",
+      "source": "https://github.com/markedjs/marked",
+      "files": [
+        "marked.min.js"
+      ]
+    },
+    {
+      "name": "DOMPurify",
+      "package": "dompurify",
+      "version": "3.4.16",
+      "license": "MPL-2.0 OR Apache-2.0",
+      "source": "https://github.com/cure53/DOMPurify",
+      "files": [
+        "purify.min.js"
+      ]
+    },
+    {
+      "name": "JSZip",
+      "package": "jszip",
+      "version": "3.10.2",
+      "license": "MIT OR GPL-3.0-or-later",
+      "source": "https://github.com/Stuk/jszip",
+      "files": [
+        "jszip.min.js"
+      ]
+    },
+    {
+      "name": "Alpine.js CSP",
+      "package": "@alpinejs/csp",
+      "version": "3.16.2",
+      "license": "MIT",
+      "source": "https://github.com/alpinejs/alpine",
+      "files": [
+        "alpine-csp.min.js"
+      ],
+      "versionEvidence": "embedded version string"
+    }
+  ]
+}

@@ -6,7 +6,7 @@
 *Local document preparation, explicit context selection, and direct Vault access.*
 
 [![License: PolyForm Perimeter 1.0.1](https://img.shields.io/badge/License-PolyForm%20Perimeter%201.0.1-087F68.svg)](LICENSE)
-[![Release: v1.0.4](https://img.shields.io/badge/Release-v1.0.4-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.0.4)
+[![Release: v1.1.0](https://img.shields.io/badge/Release-v1.1.0-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.1.0)
 
 🌐 **Language / Langue / Sprache / Lingua / Idioma**  
 **English** · [Français 🇫🇷](README.fr.md) · [Deutsch 🇩🇪](README.de.md) · [Italiano 🇮🇹](README.it.md) · [Español 🇪🇸](README.es.md)
@@ -25,12 +25,13 @@ No application backend, analytics SDK, or CDN is used by the runtime.
 - **Local conversation history** with title filtering in the sidebar.
 - **Document preservation** in IndexedDB: original Blob, canonical Markdown, MIME type, extension, size, SHA-256 hash when Web Crypto is available, extraction metadata, and provenance source map.
 - **Supported imports**: `.pdf`, `.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods`, `.csv`, `.txt`, `.md`, `.json`, `.rtf`, `.log`, and `.xml`.
-- **Document limits**: 20 MiB per file, 500,000 extracted characters, 100 PDF pages, 100 rows per spreadsheet/CSV sheet, and at most 5 files per add operation.
+- **Document limits**: 20 MiB per file, 500,000 extracted characters, 100 PDF pages, 100 PPTX slides, 100 rows per spreadsheet/CSV sheet, 200 columns max, and at most 5 files per add operation. Office/ODF archives are limited to 100 MiB expanded, 20 MiB per entry, and 2,000 entries. Profile requests include at most 120,000 characters and 100 sources.
+- **Chat context limit**: 250,000 characters across instructions, conversation history, and selected document context; oversized requests are blocked without truncating the context.
 - **Manual context mode** to choose the documents sent with the next request.
 - **Automatic context mode** that ranks folder documents locally and sends relevant, citable excerpts from up to 5 documents.
 - **Document workspace** with local full-text search, canonical Markdown preview, source references, original-file download, folder overview, and `index.md` overview export.
 - **AI-generated document profiles** (summary, people, organizations, dates, and important items) processed through a persistent two-worker queue with retry, cancellation, deduplication, and recovery after interruption. Profile generation sends document Markdown to the selected Sealarca model.
-- **Responses API integration**: dynamic model discovery through `GET /v1/models`; streaming and non-streaming requests through `POST /v1/responses`, with `store: false`, timeout handling, retryable HTTP backoff, and cancellation.
+- **Responses API integration**: dynamic model discovery through `GET /v1/models`; streaming and non-streaming requests through `POST /v1/responses`, with `store: false`, sliding 120-second timeout, retryable HTTP backoff, and chat plus profile cancellation.
 - **Streaming output** with a reasoning drawer when the gateway emits supported reasoning-summary events.
 - **Five work modes**: Document Analysis, Summary & Drafting, Legal & Contracts, Tax & Fiduciary, and Compliance & Confidentiality.
 - **Five interface languages**: French, German, Italian, English, and Spanish.
@@ -70,7 +71,7 @@ Sealarca-Desk/
 ├── js/
 │   ├── boot-theme.js          # Applies the saved theme before rendering
 │   ├── i18n.js                # Five-language UI dictionaries
-│   ├── db.js                  # IndexedDB schema v4 and persistence APIs
+│   ├── db.js                  # IndexedDB schema v5 and persistence APIs
 │   ├── doc-handler.js         # Local extraction, canonical Markdown, provenance
 │   ├── api.js                 # Fixed Sealarca Responses API client
 │   ├── p1.js                  # Search, profiles, citations, persistent job queue
@@ -93,6 +94,7 @@ Node.js is not required to run the released application. It is required for repo
 ```bash
 npm test
 npm run check
+npm run release:build
 ```
 
 Build the release artifacts on PowerShell with:

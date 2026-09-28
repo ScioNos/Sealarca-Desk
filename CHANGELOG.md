@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.1.0] - 2026-09-28
+
+### Fixed
+
+- Upgrade IndexedDB to v5 with a non-destructive v4 migration, orphan-reference guards, collision-safe messages, atomic job claims, owner-token leases, and guarded profile commits.
+- Enforce `maxAttempts` with backoff on claim/recover, keep `running` leases intact on progress updates, and use atomic snapshot export `5.0` (folders, documents, chunks, profiles, jobs, conversations, messages, roles, settings) with idempotent single-transaction import.
+- Wait for active streaming cancellation before deleting its conversation or folder; abort chat and profile (P1) requests together; use a sliding 120-second streaming timeout with a distinct `timeout` reason and close the SSE reader on `response.completed`.
+- Reject oversized chat context above 250,000 characters and cite only sources actually sent, including the manual fallback document.
+- Restrict Markdown-supplied classes and IDs, strip `svg`/`math`, restrict link protocols with `ALLOWED_URI_REGEXP`, correct Unicode-normalized search offsets, and mark streams without `response.completed` as interrupted while retaining partial output; empty cancellations no longer create ghost messages.
+- Preflight Office/ODF archives before inflation and enforce expanded-size, per-entry (20 MiB), and entry-count limits; improve RTF, CSV, DOCX, XLSX, PPTX and ODT/ODS extraction and provenance with column/slide caps and warnings.
+- Refresh locally bundled PDF.js, Marked, DOMPurify, JSZip and Alpine CSP and record versions and SHA-256 hashes in `vendor/dependencies.json`; `scripts/build-vendor.js` now verifies and copies Alpine, `scripts/build-release.ps1` refuses a vendor mismatch.
+- Preserve existing local user data and the fixed Sealarca API endpoint/protocol.
+
+### Verification
+
+- Added regression coverage for storage migration and concurrency, deletion races, context and archive boundaries, Markdown safety, citations, incomplete SSE streams, Unicode offsets, and document-format fixtures.
+- Archive verification and Windows/Chrome profile migration are part of release validation.
+
 ## [1.0.4] - 2026-09-19
 
 ### Fixed

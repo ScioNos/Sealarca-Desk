@@ -6,7 +6,7 @@
 *Préparation documentaire locale, sélection explicite du contexte et accès direct au Vault.*
 
 [![Licence : PolyForm Perimeter 1.0.1](https://img.shields.io/badge/Licence-PolyForm%20Perimeter%201.0.1-087F68.svg)](LICENSE)
-[![Version : v1.0.4](https://img.shields.io/badge/Version-v1.0.4-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.0.4)
+[![Version : v1.1.0](https://img.shields.io/badge/Version-v1.1.0-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.1.0)
 
 🌐 **Language / Langue / Sprache / Lingua / Idioma**  
 [English 🇬🇧](README.md) · **Français** · [Deutsch 🇩🇪](README.de.md) · [Italiano 🇮🇹](README.it.md) · [Español 🇪🇸](README.es.md)
@@ -25,12 +25,13 @@ Le programme n’utilise ni serveur applicatif intermédiaire, ni SDK analytique
 - **Historique local des conversations** avec filtrage des titres dans la barre latérale.
 - **Conservation des documents** dans IndexedDB : Blob original, Markdown canonique, type MIME, extension, taille, empreinte SHA-256 lorsque Web Crypto est disponible, métadonnées d’extraction et carte de provenance.
 - **Formats importés** : `.pdf`, `.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods`, `.csv`, `.txt`, `.md`, `.json`, `.rtf`, `.log` et `.xml`.
-- **Limites documentaires** : 20 Mio par fichier, 500 000 caractères extraits, 100 pages PDF, 100 lignes par feuille de calcul/CSV et 5 fichiers au maximum par ajout.
+- **Limites documentaires** : 20 Mio par fichier, 500 000 caractères extraits, 100 pages PDF, 100 diapositives PPTX, 100 lignes par feuille de calcul/CSV, 200 colonnes au maximum et 5 fichiers au maximum par ajout. Les archives Office/ODF sont limitées à 100 Mio décompressés, 20 Mio par entrée et 2 000 entrées. Les fiches incluent au maximum 120 000 caractères et 100 sources.
+- **Limite de contexte du chat** : 250 000 caractères cumulés pour les instructions, l’historique et le contexte documentaire sélectionné ; au-delà, l’envoi est bloqué sans tronquer le contexte.
 - **Mode de contexte manuel** pour choisir les documents envoyés avec la prochaine requête.
 - **Mode de contexte automatique** qui classe localement les documents du dossier et transmet des extraits pertinents et citables provenant de 5 documents au maximum.
 - **Espace documentaire** avec recherche plein texte locale, aperçu du Markdown canonique, références de source, téléchargement du fichier original, vue d’ensemble du dossier et export de cette vue en `index.md`.
 - **Fiches documentaires générées par IA** (résumé, personnes, organisations, dates et éléments importants) traitées par une file persistante de deux workers avec reprise, annulation, déduplication et récupération après interruption. La génération d’une fiche envoie le Markdown du document au modèle Sealarca sélectionné.
-- **Intégration Responses API** : découverte dynamique via `GET /v1/models` ; requêtes streaming et non-streaming via `POST /v1/responses`, avec `store: false`, délai maximal, reprises HTTP et annulation.
+- **Intégration Responses API** : découverte dynamique via `GET /v1/models` ; requêtes streaming et non-streaming via `POST /v1/responses`, avec `store: false`, délai glissant de 120 secondes, reprises HTTP et annulation chat plus fiches.
 - **Réponse en streaming** avec tiroir de raisonnement lorsque la passerelle émet les événements de résumé de raisonnement pris en charge.
 - **Cinq modes de travail** : Analyse documentaire, Synthèse & Rédaction, Juridique & Contrats, Fiscal & Fiduciaire, Conformité & Confidentialité.
 - **Cinq langues d’interface** : français, allemand, italien, anglais et espagnol.
@@ -64,7 +65,7 @@ Sealarca-Desk/
 ├── js/
 │   ├── boot-theme.js          # Applique le thème avant le rendu
 │   ├── i18n.js                # Dictionnaires pour cinq langues
-│   ├── db.js                  # Schéma IndexedDB v4 et persistance
+│   ├── db.js                  # Schéma IndexedDB v5 et persistance
 │   ├── doc-handler.js         # Extraction locale, Markdown, provenance
 │   ├── api.js                 # Client Responses API Sealarca fixe
 │   ├── p1.js                  # Recherche, fiches, citations et file persistante

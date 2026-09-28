@@ -6,7 +6,7 @@
 *Preparación local de documentos, selección explícita del contexto y acceso directo al Vault.*
 
 [![Licencia: PolyForm Perimeter 1.0.1](https://img.shields.io/badge/Licencia-PolyForm%20Perimeter%201.0.1-087F68.svg)](LICENSE)
-[![Versión: v1.0.4](https://img.shields.io/badge/Versión-v1.0.4-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.0.4)
+[![Versión: v1.1.0](https://img.shields.io/badge/Versión-v1.1.0-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.1.0)
 
 🌐 **Language / Langue / Sprache / Lingua / Idioma**  
 [English 🇬🇧](README.md) · [Français 🇫🇷](README.fr.md) · [Deutsch 🇩🇪](README.de.md) · [Italiano 🇮🇹](README.it.md) · **Español**
@@ -25,12 +25,13 @@ El programa no utiliza un backend de aplicación intermedio, SDK de analítica n
 - **Historial local de conversaciones** con filtro de títulos en la barra lateral.
 - **Conservación de documentos en IndexedDB**: Blob original, Markdown canónico, tipo MIME, extensión, tamaño, hash SHA-256 cuando Web Crypto está disponible, metadatos de extracción y mapa de procedencia.
 - **Importaciones compatibles**: `.pdf`, `.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods`, `.csv`, `.txt`, `.md`, `.json`, `.rtf`, `.log` y `.xml`.
-- **Límites documentales**: 20 MiB por archivo, 500.000 caracteres extraídos, 100 páginas PDF, 100 filas por hoja de cálculo/CSV y un máximo de 5 archivos por operación de añadido.
+- **Límites documentales**: 20 MiB por archivo, 500.000 caracteres extraídos, 100 páginas PDF, 100 diapositivas PPTX, 100 filas por hoja de cálculo/CSV, 200 columnas como máximo y un máximo de 5 archivos por operación de añadido. Los archivos Office/ODF están limitados a 100 MiB descomprimidos, 20 MiB por entrada y 2.000 entradas. Los perfiles incluyen como máximo 120.000 caracteres y 100 fuentes.
+- **Límite del contexto del chat**: 250.000 caracteres en total para instrucciones, historial y contexto documental seleccionado; las solicitudes mayores se bloquean sin truncar el contexto.
 - **Modo de contexto manual** para elegir los documentos enviados con la siguiente solicitud.
 - **Modo de contexto automático** que clasifica localmente los documentos de la carpeta y envía extractos pertinentes y citables de hasta 5 documentos.
 - **Área documental** con búsqueda local de texto completo, vista previa del Markdown canónico, referencias de origen, descarga del archivo original, resumen de la carpeta y exportación del resumen como `index.md`.
 - **Perfiles documentales generados por IA** (resumen, personas, organizaciones, fechas y elementos importantes), procesados mediante una cola persistente de dos workers con reintentos, cancelación, deduplicación y recuperación tras una interrupción. La generación envía el Markdown del documento al modelo Sealarca elegido.
-- **Integración con Responses API**: descubrimiento dinámico mediante `GET /v1/models`; solicitudes con y sin streaming mediante `POST /v1/responses`, con `store: false`, timeout, backoff HTTP y cancelación.
+- **Integración con Responses API**: descubrimiento dinámico mediante `GET /v1/models`; solicitudes con y sin streaming mediante `POST /v1/responses`, con `store: false`, timeout deslizante de 120 segundos, backoff HTTP y cancelación para chat más perfiles.
 - **Salida en streaming** con panel de razonamiento cuando la pasarela emite eventos de resumen de razonamiento compatibles.
 - **Cinco modos de trabajo**: Análisis documental, Síntesis y redacción, Jurídico y contratos, Fiscal y fiduciario, Cumplimiento y confidencialidad.
 - **Cinco idiomas de interfaz**: francés, alemán, italiano, inglés y español.
@@ -64,7 +65,7 @@ Sealarca-Desk/
 ├── js/
 │   ├── boot-theme.js          # Aplica el tema antes del renderizado
 │   ├── i18n.js                # Diccionarios para cinco idiomas
-│   ├── db.js                  # Esquema IndexedDB v4 y persistencia
+│   ├── db.js                  # Esquema IndexedDB v5 y persistencia
 │   ├── doc-handler.js         # Extracción local, Markdown y procedencia
 │   ├── api.js                 # Cliente fijo de Sealarca Responses API
 │   ├── p1.js                  # Búsqueda, perfiles, citas y cola persistente

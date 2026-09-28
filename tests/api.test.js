@@ -32,6 +32,11 @@ function responseFromSse(events) {
     return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } });
 }
 
+function responseFromRawSse(raw) {
+    const body = new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode(raw)); controller.close(); } });
+    return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+}
+
 test('fetchModels normalise, déduplique et trie les modèles', async () => {
     const api = loadApi(async (url, options) => {
         assert.equal(url, 'https://sealarca.ch/v1/models');
@@ -91,6 +96,38 @@ test('streamResponse utilise /responses et consomme les événements typés', as
     assert.equal(result.reasoning, 'analyse');
     assert.equal(result.meta.interrupted, false);
     assert.equal(chunks.length, 3);
+});
+
+test('un flux SSE fermé sans response.completed garde le partiel et le marque interrompu', async () => {
+    const raw = [
+        `data: ${JSON.stringify({ type: 'response.output_text.delta', delta: 'Partiel' })}`,
+        `data: ${JSON.stringify({ type: 'response.reasoning_summary_text.delta', delta: 'raisonnement' })}`,
+        'data: [DONE]'
+    ].join('\n');
+    const api = loadApi(async () => responseFromRawSse(raw));
+    const result = await new Promise((resolve, reject) => api.streamResponse({
+        apiKey: 'secret', model: 'model-a', messages: [{ role: 'user', content: 'Question' }],
+        onError: reject,
+        onDone: (text, reasoning, meta) => resolve({ text, reasoning, meta })
+    }));
+    assert.equal(result.text, 'Partiel');
+    assert.equal(result.reasoning, 'raisonnement');
+    assert.equal(result.meta.interrupted, true);
+    assert.equal(result.meta.reason, 'eof_without_completion');
+});
+
+test('response.completed reste un succès quand il arrive sans saut de ligne final', async () => {
+    const raw = `data: ${JSON.stringify({ type: 'response.output_text.delta', delta: 'Complet' })}\n\n` +
+        `data: ${JSON.stringify({ type: 'response.completed', response: { id: 'finished' } })}`;
+    const api = loadApi(async () => responseFromRawSse(raw));
+    const result = await new Promise((resolve, reject) => api.streamResponse({
+        apiKey: 'secret', model: 'model-a', messages: [{ role: 'user', content: 'Question' }],
+        onError: reject,
+        onDone: (text, reasoning, meta) => resolve({ text, reasoning, meta })
+    }));
+    assert.equal(result.text, 'Complet');
+    assert.equal(result.meta.interrupted, false);
+    assert.equal(result.meta.response.id, 'finished');
 });
 
 test('les erreurs HTTP ne divulguent pas la clé et sont remontées', async () => {
