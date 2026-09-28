@@ -7,7 +7,7 @@
     
     <!-- Sécurité CSP stricte : Aucun script externe, requêtes autorisées uniquement vers Sealarca Vault et local -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' file: blob: data:; script-src 'self' file:; style-src 'self' file: 'unsafe-inline'; img-src 'self' file: data: blob:; font-src 'self' file: data:; connect-src 'self' file: blob: data: https://sealarca.ch http://localhost:* http://127.0.0.1:*; worker-src 'self' file: blob:; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'none';">
-    <script src="js/boot-theme.js?v=1.0.4"></script>
+    <script src="js/boot-theme.js?v=1.1.0"></script>
 
     <!-- Feuilles de style officielles Sealarca -->
     <link rel="stylesheet" href="css/theme.css">
@@ -212,6 +212,7 @@
                                     <span x-text="msg.senderInitial"></span>
                                     </div>
                                 <span x-text="msg.senderName"></span>
+                                <template x-if="msg.interrupted"><span class="message-status-interrupted" x-text="msg.interruptedLabel"></span></template>
                                 </div>
                                 <div class="message-actions">
                                 <button type="button" class="msg-action-btn" :title="appCopy" @click="msg.copy">
@@ -487,7 +488,7 @@
                     </div>
                     <button type="button" class="modal-close" @click="closeDocuments" :aria-label="documentsCloseLabel">&times;</button>
                 </div>
-                <div class="workspace-tabs" role="tablist" aria-label="Espace documentaire">
+                <div class="workspace-tabs" role="tablist" aria-label="Espace documentaire" @keydown="handleWorkspaceTabsKeydown">
                     <button type="button" id="overview-tab" class="workspace-tab" :class="overviewTabClass" role="tab" aria-controls="overview-panel" :aria-selected="isOverviewTab" @click="openOverviewTab" x-text="documentsOverviewTab"></button>
                     <button type="button" id="library-tab" class="workspace-tab" :class="libraryTabClass" role="tab" aria-controls="library-panel" :aria-selected="isLibraryTab" @click="openLibraryTab" x-text="documentsLibraryTab"></button>
                     <button type="button" id="search-tab" class="workspace-tab" :class="searchTabClass" role="tab" aria-controls="search-panel" :aria-selected="isSearchTab" @click="openSearchTab" x-text="documentsSearchTab"></button>
@@ -658,17 +659,18 @@
     <!-- =====================================================================
          Scripts locaux (Zéro CDN; les opérations IA nécessitent le réseau)
          ===================================================================== -->
-    <script src="vendor/jszip.min.js"></script>
-    <script src="vendor/pdf.min.js"></script>
-    <script src="vendor/marked.min.js"></script>
-    <script src="vendor/purify.min.js"></script>
+    <script src="vendor/jszip.min.js?v=1.1.0"></script>
+    <script src="vendor/pdf.worker.min.js?v=1.1.0"></script>
+    <script src="vendor/pdf.min.js?v=1.1.0"></script>
+    <script src="vendor/marked.min.js?v=1.1.0"></script>
+    <script src="vendor/purify.min.js?v=1.1.0"></script>
     
-    <script src="js/i18n.js?v=1.0.4"></script>
-    <script src="js/db.js?v=1.0.4"></script>
-    <script src="js/doc-handler.js?v=1.0.4"></script>
-    <script src="js/api.js?v=1.0.4"></script>
-    <script src="js/p1.js?v=1.0.4"></script>
-    <script src="js/app.js?v=1.0.4"></script>
+    <script src="js/i18n.js?v=1.1.0"></script>
+    <script src="js/db.js?v=1.1.0"></script>
+    <script src="js/doc-handler.js?v=1.1.0"></script>
+    <script src="js/api.js?v=1.1.0"></script>
+    <script src="js/p1.js?v=1.1.0"></script>
+    <script src="js/app.js?v=1.1.0"></script>
     <script src="vendor/alpine-csp.min.js?v=3.16.2" defer></script>
 </body>
 </html>

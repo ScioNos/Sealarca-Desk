@@ -6,7 +6,7 @@
 *Lokale Dokumentaufbereitung, explizite Kontextauswahl und direkter Vault-Zugriff.*
 
 [![Lizenz: PolyForm Perimeter 1.0.1](https://img.shields.io/badge/Lizenz-PolyForm%20Perimeter%201.0.1-087F68.svg)](LICENSE)
-[![Version: v1.0.4](https://img.shields.io/badge/Version-v1.0.4-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.0.4)
+[![Version: v1.1.0](https://img.shields.io/badge/Version-v1.1.0-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.1.0)
 
 🌐 **Language / Langue / Sprache / Lingua / Idioma**  
 [English 🇬🇧](README.md) · [Français 🇫🇷](README.fr.md) · **Deutsch** · [Italiano 🇮🇹](README.it.md) · [Español 🇪🇸](README.es.md)
@@ -25,12 +25,13 @@ Zur Laufzeit werden weder ein zwischengeschaltetes Anwendungs-Backend noch Analy
 - **Lokaler Gesprächsverlauf** mit Titelfilter in der Seitenleiste.
 - **Dokumentablage in IndexedDB**: Original-Blob, kanonisches Markdown, MIME-Typ, Erweiterung, Größe, SHA-256-Hash (wenn Web Crypto verfügbar ist), Extraktionsmetadaten und Herkunftskarte.
 - **Unterstützte Importe**: `.pdf`, `.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods`, `.csv`, `.txt`, `.md`, `.json`, `.rtf`, `.log` und `.xml`.
-- **Dokumentgrenzen**: 20 MiB pro Datei, 500.000 extrahierte Zeichen, 100 PDF-Seiten, 100 Zeilen pro Tabellen-/CSV-Blatt und höchstens 5 Dateien pro Hinzufügen-Vorgang.
+- **Dokumentgrenzen**: 20 MiB pro Datei, 500.000 extrahierte Zeichen, 100 PDF-Seiten, 100 PPTX-Folien, 100 Zeilen pro Tabellen-/CSV-Blatt, maximal 200 Spalten und höchstens 5 Dateien pro Hinzufügen-Vorgang. Office-/ODF-Archive sind auf 100 MiB entpackte Daten, 20 MiB pro Eintrag und 2.000 Einträge begrenzt. Profile umfassen höchstens 120.000 Zeichen und 100 Quellen.
+- **Chat-Kontextgrenze**: insgesamt 250.000 Zeichen für Anweisungen, Gesprächsverlauf und ausgewählten Dokumentkontext; größere Anfragen werden ohne Kürzung blockiert.
 - **Manueller Kontextmodus** zur Auswahl der Dokumente für die nächste Anfrage.
 - **Automatischer Kontextmodus**, der Ordnerdokumente lokal bewertet und relevante, zitierfähige Auszüge aus höchstens 5 Dokumenten sendet.
 - **Dokumentarbeitsbereich** mit lokaler Volltextsuche, Markdown-Vorschau, Quellenangaben, Download der Originaldatei, Ordnerübersicht und Export der Übersicht als `index.md`.
 - **KI-generierte Dokumentprofile** (Zusammenfassung, Personen, Organisationen, Daten und wichtige Punkte) über eine persistente Queue mit zwei Workern, Wiederholung, Abbruch, Deduplizierung und Wiederaufnahme nach Unterbrechung. Dafür wird das Dokument-Markdown an das gewählte Sealarca-Modell gesendet.
-- **Responses-API-Integration**: dynamische Modellabfrage über `GET /v1/models`; Streaming- und Nicht-Streaming-Anfragen über `POST /v1/responses` mit `store: false`, Timeout, HTTP-Backoff und Abbruch.
+- **Responses-API-Integration**: dynamische Modellabfrage über `GET /v1/models`; Streaming- und Nicht-Streaming-Anfragen über `POST /v1/responses` mit `store: false`, gleitendem 120-Sekunden-Timeout, HTTP-Backoff und Abbruch für Chat plus Profile.
 - **Streaming-Ausgabe** mit Reasoning-Bereich, wenn das Gateway unterstützte Reasoning-Summary-Ereignisse liefert.
 - **Fünf Arbeitsmodi**: Dokumentenanalyse, Zusammenfassung & Redaktion, Recht & Verträge, Steuern & Treuhand sowie Compliance & Vertraulichkeit.
 - **Fünf Oberflächensprachen**: Französisch, Deutsch, Italienisch, Englisch und Spanisch.
@@ -64,7 +65,7 @@ Sealarca-Desk/
 ├── js/
 │   ├── boot-theme.js          # Wendet das Design vor dem Rendern an
 │   ├── i18n.js                # Wörterbücher für fünf Sprachen
-│   ├── db.js                  # IndexedDB-Schema v4 und Persistenz
+│   ├── db.js                  # IndexedDB-Schema v5 und Persistenz
 │   ├── doc-handler.js         # Lokale Extraktion, Markdown, Herkunft
 │   ├── api.js                 # Fester Sealarca-Responses-API-Client
 │   ├── p1.js                  # Suche, Profile, Zitate und persistente Queue

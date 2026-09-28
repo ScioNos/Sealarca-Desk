@@ -1,0 +1,1 @@
+Alpine.js CSP 3.16.2 — MIT (https://github.com/alpinejs/alpine)

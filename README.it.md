@@ -6,7 +6,7 @@
 *Preparazione locale dei documenti, selezione esplicita del contesto e accesso diretto al Vault.*
 
 [![Licenza: PolyForm Perimeter 1.0.1](https://img.shields.io/badge/Licenza-PolyForm%20Perimeter%201.0.1-087F68.svg)](LICENSE)
-[![Versione: v1.0.4](https://img.shields.io/badge/Versione-v1.0.4-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.0.4)
+[![Versione: v1.1.0](https://img.shields.io/badge/Versione-v1.1.0-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.1.0)
 
 🌐 **Language / Langue / Sprache / Lingua / Idioma**  
 [English 🇬🇧](README.md) · [Français 🇫🇷](README.fr.md) · [Deutsch 🇩🇪](README.de.md) · **Italiano** · [Español 🇪🇸](README.es.md)
@@ -25,12 +25,13 @@ Il runtime non usa backend applicativi intermedi, SDK di analisi o CDN.
 - **Cronologia locale delle conversazioni** con filtro dei titoli nella barra laterale.
 - **Conservazione dei documenti in IndexedDB**: Blob originale, Markdown canonico, tipo MIME, estensione, dimensione, hash SHA-256 quando Web Crypto è disponibile, metadati di estrazione e mappa della provenienza.
 - **Importazioni supportate**: `.pdf`, `.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods`, `.csv`, `.txt`, `.md`, `.json`, `.rtf`, `.log` e `.xml`.
-- **Limiti documentali**: 20 MiB per file, 500.000 caratteri estratti, 100 pagine PDF, 100 righe per foglio di calcolo/CSV e massimo 5 file per operazione di aggiunta.
+- **Limiti documentali**: 20 MiB per file, 500.000 caratteri estratti, 100 pagine PDF, 100 diapositive PPTX, 100 righe per foglio di calcolo/CSV, 200 colonne al massimo e massimo 5 file per operazione di aggiunta. Gli archivi Office/ODF sono limitati a 100 MiB decompressi, 20 MiB per voce e 2.000 voci. I profili includono al massimo 120.000 caratteri e 100 fonti.
+- **Limite del contesto chat**: 250.000 caratteri complessivi per istruzioni, cronologia e contesto documentale selezionato; le richieste più grandi vengono bloccate senza tagliare il contesto.
 - **Modalità contesto manuale** per scegliere i documenti inviati con la richiesta successiva.
 - **Modalità contesto automatica** che classifica localmente i documenti della cartella e invia estratti pertinenti e citabili da un massimo di 5 documenti.
 - **Area documenti** con ricerca full-text locale, anteprima del Markdown canonico, riferimenti alle fonti, download del file originale, panoramica della cartella ed esportazione della panoramica in `index.md`.
 - **Profili documentali generati dall’IA** (sintesi, persone, organizzazioni, date ed elementi importanti), elaborati da una coda persistente a due worker con retry, annullamento, deduplicazione e ripresa dopo un’interruzione. La generazione invia il Markdown del documento al modello Sealarca selezionato.
-- **Integrazione Responses API**: scoperta dinamica tramite `GET /v1/models`; richieste streaming e non streaming tramite `POST /v1/responses`, con `store: false`, timeout, backoff HTTP e annullamento.
+- **Integrazione Responses API**: scoperta dinamica tramite `GET /v1/models`; richieste streaming e non streaming tramite `POST /v1/responses`, con `store: false`, timeout scorrevole di 120 secondi, backoff HTTP e annullamento per chat più profili.
 - **Output in streaming** con pannello di ragionamento quando il gateway emette gli eventi di riepilogo del ragionamento supportati.
 - **Cinque modalità di lavoro**: Analisi documentale, Sintesi e redazione, Diritto e contratti, Fiscale e fiduciario, Conformità e riservatezza.
 - **Cinque lingue dell’interfaccia**: francese, tedesco, italiano, inglese e spagnolo.
@@ -64,7 +65,7 @@ Sealarca-Desk/
 ├── js/
 │   ├── boot-theme.js          # Applica il tema prima del rendering
 │   ├── i18n.js                # Dizionari per cinque lingue
-│   ├── db.js                  # Schema IndexedDB v4 e persistenza
+│   ├── db.js                  # Schema IndexedDB v5 e persistenza
 │   ├── doc-handler.js         # Estrazione locale, Markdown, provenienza
 │   ├── api.js                 # Client fisso Sealarca Responses API
 │   ├── p1.js                  # Ricerca, profili, citazioni e coda persistente

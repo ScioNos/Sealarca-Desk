@@ -3,6 +3,8 @@
  * Intégration multilingue i18n (FR, DE, IT, EN, ES) & Réactivité complète.
  */
 
+const MAX_CHAT_CONTEXT_CHARACTERS = 250000;
+
 document.addEventListener('alpine:init', () => {
     // x-html est volontairement interdit par Alpine CSP. Cette directive interne
     // n'accepte que du HTML déjà produit et assaini par renderMarkdown().
@@ -59,6 +61,7 @@ document.addEventListener('alpine:init', () => {
         isStreaming: false,
         currentStreamingMessage: '',
         currentStreamingReasoning: '',
+        activeStreamPromise: null,
         isReasoningOpen: true,
 
         // --- Rôles métiers ---
@@ -146,6 +149,7 @@ document.addEventListener('alpine:init', () => {
         get settingsStepOne() { return this.t('settings.stepOne'); },
         get settingsStepTwo() { return this.t('settings.stepTwo'); },
         get settingsStartUrl() {
+            // Le site ne propose pas de page /es/ ; l'espagnol retombe volontairement sur /en/.
             const locale = ['fr', 'de', 'it', 'en'].includes(this.currentLang) ? this.currentLang : 'en';
             return `https://sealarca.ch/${locale}/commencer#desk`;
         },
@@ -209,7 +213,7 @@ document.addEventListener('alpine:init', () => {
         get hasNoOverviewEntities() { return this.folderOverview.people.length === 0 && this.folderOverview.organizations.length === 0; },
         get isManualContext() { return this.contextMode === 'manual'; },
         get isAutomaticContext() { return this.contextMode === 'automatic'; },
-        get folderOverviewPagesLabel() { return this.folderOverview.pageCount > 0 ? this.folderOverview.pageCount + ' pages' : 'Pages non disponibles'; },
+        get folderOverviewPagesLabel() { return this.folderOverview.pageCount > 0 ? this.folderOverview.pageCount + ' pages' : this.t('documents.pagesUnavailable'); },
         get folderOverviewProfilesLabel() { return this.folderOverview.profileCount + ' / ' + this.folderOverview.documentCount; },
 
         get documentsWorkspaceKicker() { return this.t('documents.workspaceKicker'); },
@@ -300,6 +304,22 @@ document.addEventListener('alpine:init', () => {
         openLibraryTab() { this.documentPanelTab = 'library'; },
         openSearchTab() { this.documentPanelTab = 'search'; },
         openJobsTab() { this.documentPanelTab = 'jobs'; this.loadProcessingJobs(); },
+        handleWorkspaceTabsKeydown(event) {
+            if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft' && event.key !== 'Home' && event.key !== 'End') return;
+            const order = ['overview', 'library', 'search', 'jobs'];
+            let index = order.indexOf(this.documentPanelTab);
+            if (event.key === 'ArrowRight') index = (index + 1) % order.length;
+            else if (event.key === 'ArrowLeft') index = (index - 1 + order.length) % order.length;
+            else if (event.key === 'Home') index = 0;
+            else if (event.key === 'End') index = order.length - 1;
+            event.preventDefault();
+            const tab = order[index];
+            if (tab === 'overview') this.openOverviewTab();
+            else if (tab === 'library') this.openLibraryTab();
+            else if (tab === 'search') this.openSearchTab();
+            else if (tab === 'jobs') this.openJobsTab();
+            this.$nextTick(() => document.getElementById(`${tab}-tab`)?.focus());
+        },
         useManualContext() { this.contextMode = 'manual'; },
         useAutomaticContext() { this.contextMode = 'automatic'; },
         closeDocuments() { return this.closeModal('isDocumentsOpen', 'documents'); },
@@ -605,12 +625,13 @@ document.addEventListener('alpine:init', () => {
                 const connected = await this.loadModels(false);
                 if (!connected) return;
             }
-            if (this.selectedModel) this.isSettingsOpen = false;
+            if (this.selectedModel) this.closeModal('isSettingsOpen', 'settings', true);
             else this.apiError = this.t('settings.modelRequired');
         },
 
         async forgetApiKey() {
-            window.sealarcaApi.abortCurrentRequest();
+            if (window.sealarcaApi && typeof window.sealarcaApi.abortAllRequests === 'function') window.sealarcaApi.abortAllRequests('cancelled');
+            else window.sealarcaApi.abortCurrentRequest();
             try { sessionStorage.removeItem('sealarca_api_key_session'); } catch { /* indisponible */ }
             await window.sealarcaDb.deleteSetting('sealarca_api_key');
             await window.sealarcaDb.deleteSetting('sealarca_model');
@@ -692,7 +713,9 @@ document.addEventListener('alpine:init', () => {
                 return;
             }
             if (!window.confirm(this.t('folders.deleteConfirm'))) return;
-            await window.sealarcaDb.deleteFolder(id);
+            if (id === this.activeFolderId) await this.cancelAndWaitForStream();
+            const deleted = await window.sealarcaDb.deleteFolder(id);
+            if (!deleted) return;
             await this.loadFolders();
             const next = this.folders[0];
             if (next) await this.selectFolder(next.id);
@@ -763,7 +786,9 @@ document.addEventListener('alpine:init', () => {
             const link = window.document.createElement('a');
             link.href = url;
             link.download = document.originalName || document.name;
+            window.document.body.appendChild(link);
             link.click();
+            link.remove();
             setTimeout(() => URL.revokeObjectURL(url), 1000);
         },
 
@@ -778,8 +803,30 @@ document.addEventListener('alpine:init', () => {
             return this.messages.map(message => ({ role: message.role, content: message.content || '' }));
         },
 
+        createMessageId(role) {
+            let randomId = '';
+            try { randomId = window.crypto?.randomUUID?.() || ''; } catch (_) { /* fallback below */ }
+            return `msg_${randomId || `${Date.now()}_${Math.random().toString(36).slice(2, 12)}`}_${role}`;
+        },
+
+        async cancelAndWaitForStream() {
+            const stream = this.activeStreamPromise;
+            if (!this.isStreaming && !stream) return;
+            if (this.isStreaming && window.sealarcaApi) {
+                if (typeof window.sealarcaApi.abortAllRequests === 'function') window.sealarcaApi.abortAllRequests('cancelled');
+                else window.sealarcaApi.abortCurrentRequest();
+            }
+            if (this.p1Queue?.running?.size) {
+                for (const running of this.p1Queue.running.values()) {
+                    try { running.controller.abort('cancelled'); } catch (_) {}
+                }
+            }
+            if (stream) await stream;
+        },
+
         buildDocumentContext(documents, query = '', mode = this.contextMode) {
-            if (!documents.length) return '';
+            if (!documents.length) return { text: '', citationDocuments: [] };
+            const citationDocuments = [];
             const sections = documents.map(document => {
                 const sourceMap = Array.isArray(document.sourceMap) ? document.sourceMap : [];
                 const excerpts = mode === 'automatic'
@@ -789,11 +836,22 @@ document.addEventListener('alpine:init', () => {
                         excerpt: String(document.markdown || '').slice(Number(source.markdownStart || 0), Number(source.markdownEnd || 0)).trim()
                     })).filter(item => item.excerpt);
                 if (!excerpts.length) {
+                    citationDocuments.push({ ...document, sourceMap: [] });
                     return ['## Document sélectionné : ' + document.name, 'Type: ' + (document.mimeType || document.extension || 'inconnu'), '', String(document.markdown || '')].join('\n');
                 }
+                const sentSourceMap = [];
+                for (const excerpt of excerpts) {
+                    const source = sourceMap.find(item => item.id && item.id === excerpt.sourceId)
+                        || sourceMap.find(item => window.SealarcaP1.sourceReference(document, item) === excerpt.reference);
+                    if (source && !sentSourceMap.some(item => item.id === source.id)) sentSourceMap.push(source);
+                }
+                citationDocuments.push({ ...document, sourceMap: sentSourceMap });
                 return ['## Document sélectionné : ' + document.name, 'Type: ' + (document.mimeType || document.extension || 'inconnu'), '', ...excerpts.map(item => '### SOURCE: ' + item.reference + '\n' + item.excerpt)].join('\n\n');
             });
-            return '\n\n# CONTEXTE DOCUMENTAIRE SÉLECTIONNÉ\n\n' + sections.join('\n\n---\n\n') + '\n\nRègle de citation: cite exactement les libellés SOURCE fournis. N’invente jamais une page, slide, feuille ou ligne absente.\n\n# FIN DU CONTEXTE DOCUMENTAIRE\n';
+            return {
+                text: '\n\n# CONTEXTE DOCUMENTAIRE SÉLECTIONNÉ\n\n' + sections.join('\n\n---\n\n') + '\n\nRègle de citation: cite exactement les libellés SOURCE fournis. N’invente jamais une page, slide, feuille ou ligne absente.\n\n# FIN DU CONTEXTE DOCUMENTAIRE\n',
+                citationDocuments
+            };
         },
 
         async initializeP1Queue() {
@@ -865,7 +923,7 @@ document.addEventListener('alpine:init', () => {
             const document = await window.sealarcaDb.getDocument(documentId);
             if (!document) return;
             const result = await this.p1Queue.enqueueDocument(document);
-            this.showToast(result.skipped ? 'Fiche déjà à jour.' : 'Fiche ajoutée à la queue.');
+            this.showToast(result.skipped ? this.t('app.profileUpToDate') : this.t('app.profileQueued'));
             await this.refreshFolderWorkspace();
         },
 
@@ -873,7 +931,7 @@ document.addEventListener('alpine:init', () => {
             await this.initializeP1Queue();
             const results = await this.p1Queue.enqueueDocuments(this.documents);
             const queued = results.filter(result => !result.skipped).length;
-            this.showToast(queued ? queued + ' fiche(s) ajoutée(s) à la queue.' : 'Toutes les fiches sont déjà à jour.');
+            this.showToast(queued ? this.t('app.profilesQueued').replaceAll('{count}', String(queued)) : this.t('app.profilesUpToDate'));
             await this.refreshFolderWorkspace();
         },
 
@@ -916,7 +974,9 @@ document.addEventListener('alpine:init', () => {
             const link = document.createElement('a');
             link.href = url;
             link.download = 'index.md';
+            document.body.appendChild(link);
             link.click();
+            link.remove();
             setTimeout(() => URL.revokeObjectURL(url), 1000);
         },
 
@@ -944,6 +1004,7 @@ document.addEventListener('alpine:init', () => {
                 _showReasoning: message._showReasoning !== false,
                 get senderInitial() { return message.role === 'assistant' ? 'S' : 'V'; },
                 get senderName() { return message.role === 'assistant' ? 'Sealarca Vault' : app.t('app.you'); },
+                get interruptedLabel() { return message.interrupted ? app.t('app.streamInterrupted') : ''; },
                 get hasAttachments() { return Boolean((message.documentRefs && message.documentRefs.length) || (message.attachments && message.attachments.length)); },
                 get visibleAttachments() { return (message.documentRefs || message.attachments || []).map((attachment, index) => ({ ...attachment, attachmentKey: attachment.id || attachment.name || ('attachment_' + index) })); },
                 get hasReasoning() { return Boolean(message.reasoning); },
@@ -994,6 +1055,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         async deleteConversation(id) {
+            if (id === this.activeConversationId) await this.cancelAndWaitForStream();
             await window.sealarcaDb.deleteConversation(id);
             await this.loadConversations();
             if (this.activeConversationId === id) {
@@ -1010,7 +1072,7 @@ document.addEventListener('alpine:init', () => {
         selectRole(role) {
             this.selectedRole = role;
             this.persistSelectedRole(role);
-            this.isRolesOpen = false;
+            this.closeModal('isRolesOpen', 'roles', true);
             this.showToast(`${this.t('input.roleLabel')} : ${role.name}`);
         },
 
@@ -1022,17 +1084,18 @@ document.addEventListener('alpine:init', () => {
             if (!this.hasConfiguredApi || !this.selectedModel) {
                 this.isSettingsOpen = true;
                 this.apiError = this.hasApiKey
-                    ? 'Aucun modèle disponible pour cette clé API.'
+                    ? this.t('settings.noModels')
                     : this.t('settings.keyMissing');
                 this.focusApiKeyInput();
                 return;
             }
 
-            // 1. Créer la conversation si première interaction
-            if (!this.activeConversationId) {
+            let conversationId = this.activeConversationId;
+            let pendingConversation = null;
+            if (!conversationId) {
                 const titleText = text || (this.attachedFiles[0] ? `Doc: ${this.attachedFiles[0].name}` : this.t('app.newChat'));
-                const newConv = {
-                    id: 'conv_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+                pendingConversation = {
+                    id: `conv_${window.crypto?.randomUUID?.() || `${Date.now()}_${Math.random().toString(36).slice(2, 12)}`}`,
                     title: titleText.length > 40 ? titleText.substring(0, 40) + '...' : titleText,
                     folderId: this.activeFolderId || window.SEALARCA_DEFAULT_FOLDER_ID,
                     model: this.selectedModel,
@@ -1040,13 +1103,12 @@ document.addEventListener('alpine:init', () => {
                     createdAt: Date.now(),
                     updatedAt: Date.now()
                 };
-                await window.sealarcaDb.saveConversation(newConv);
-                this.activeConversationId = newConv.id;
-                await this.loadConversations();
+                conversationId = pendingConversation.id;
             }
 
             // 2. Conserver uniquement les références documentaires dans le message.
-            const folderDocuments = await window.sealarcaDb.getDocuments(this.activeFolderId);
+            const folderId = this.activeFolderId || window.SEALARCA_DEFAULT_FOLDER_ID;
+            const folderDocuments = await window.sealarcaDb.getDocuments(folderId);
             const automaticSelection = this.contextMode === 'automatic'
                 ? (text
                     ? window.SealarcaP1.selectRelevantDocuments(folderDocuments, text, { limit: 5 })
@@ -1056,7 +1118,7 @@ document.addEventListener('alpine:init', () => {
                 ? automaticSelection.map(item => item.document.id)
                 : this.selectedDocumentIds;
             const selectedDocuments = (await window.sealarcaDb.getDocumentsByIds(requestedIds))
-                .filter(document => document.folderId === this.activeFolderId);
+                .filter(document => document.folderId === folderId);
             const documentRefs = selectedDocuments.map(document => ({
                 id: document.id,
                 name: document.name,
@@ -1066,25 +1128,40 @@ document.addEventListener('alpine:init', () => {
             }));
 
             const userMsg = {
-                id: 'msg_' + Date.now() + '_user',
-                conversationId: this.activeConversationId,
+                id: this.createMessageId('user'),
+                conversationId,
                 role: 'user',
                 content: text || (selectedDocuments[0] ? `[${selectedDocuments[0].name}]` : '...'),
                 documentRefs,
                 contextSelection: {
                     mode: this.contextMode === 'automatic' ? 'automatic' : 'manual',
                     scope: 'folder',
-                    folderId: this.activeFolderId,
+                    folderId,
                     documentIds: documentRefs.map(document => document.id)
                 },
                 createdAt: Date.now()
             };
 
-            // 3. Sauvegarder et afficher le message utilisateur
+            // Construire et borner exactement le texte qui serait envoyé avant de persister le message.
+            const documentContext = this.buildDocumentContext(selectedDocuments, text, this.contextMode);
+            const apiMessages = this.buildConversationHistory();
+            apiMessages.push({ role: 'user', content: userMsg.content + documentContext.text });
+            const systemPrompt = this.selectedRole ? this.selectedRole.systemPrompt : null;
+            const contextCharacters = Array.from([systemPrompt || '', ...apiMessages.map(message => message.content || '')].join('')).length;
+            if (contextCharacters > MAX_CHAT_CONTEXT_CHARACTERS) {
+                this.showToast(this.t('app.contextTooLarge'), 7000);
+                return;
+            }
+
+            if (pendingConversation) {
+                await window.sealarcaDb.saveConversation(pendingConversation, { allowCreate: true });
+                this.activeConversationId = pendingConversation.id;
+                await this.loadConversations();
+            }
             await window.sealarcaDb.saveMessage(userMsg);
             this.messages.push(this.decorateMessage(userMsg));
 
-            // Réinitialiser les entrées
+            // Réinitialiser les entrées uniquement après validation et persistance.
             this.inputPrompt = '';
             this.selectedDocumentIds = [];
             this.attachedFiles = [];
@@ -1093,17 +1170,8 @@ document.addEventListener('alpine:init', () => {
             this.isStreaming = true;
             this.scrollToBottom();
 
-            // 4. Séparer l'historique du contexte documentaire explicitement sélectionné.
-            const apiMessages = this.buildConversationHistory();
-            const currentUserMessage = apiMessages[apiMessages.length - 1];
-            if (currentUserMessage && currentUserMessage.role === 'user' && selectedDocuments.length > 0) {
-                currentUserMessage.content += this.buildDocumentContext(selectedDocuments, text, this.contextMode);
-            }
-
-            const systemPrompt = this.selectedRole ? this.selectedRole.systemPrompt : null;
-
             // 5. Lancer le streaming
-            await window.sealarcaApi.streamResponse({
+            const streamPromise = window.sealarcaApi.streamResponse({
                 apiKey: this.apiKey,
                 model: this.selectedModel,
                 messages: apiMessages,
@@ -1120,16 +1188,22 @@ document.addEventListener('alpine:init', () => {
                 },
                 onDone: async (finalText, finalReasoning, metadata = {}) => {
                     try {
+                        if (!finalText && !finalReasoning) {
+                            const conv = await window.sealarcaDb.getConversation(conversationId);
+                            if (conv) await this.loadConversations();
+                            return;
+                        }
                         if (finalText || finalReasoning) {
                             const assistantMsg = {
-                                id: 'msg_' + Date.now() + '_assistant',
-                                conversationId: this.activeConversationId,
+                                id: this.createMessageId('assistant'),
+                                conversationId,
                                 role: 'assistant',
-                                content: finalText || (metadata.interrupted ? '(Réponse interrompue)' : '(Réponse vide)'),
+                                content: finalText || (metadata.interrupted ? (metadata.reason === 'timeout' ? this.t('app.streamTimeout') : this.t('app.streamInterrupted')) : '(Réponse vide)'),
                                 reasoning: finalReasoning || null,
                                 model: this.selectedModel,
                                 interrupted: Boolean(metadata.interrupted),
-                                citations: window.SealarcaP1.extractCitations(finalText, selectedDocuments),
+                                interruptReason: metadata.reason || null,
+                                citations: window.SealarcaP1.extractCitations(finalText, documentContext.citationDocuments),
                                 createdAt: Date.now()
                             };
                             await window.sealarcaDb.saveMessage(assistantMsg);
@@ -1137,7 +1211,7 @@ document.addEventListener('alpine:init', () => {
                         }
 
                         // Mettre à jour l'horodatage de la conversation
-                        const conv = await window.sealarcaDb.getConversation(this.activeConversationId);
+                        const conv = await window.sealarcaDb.getConversation(conversationId);
                         if (conv) {
                             await window.sealarcaDb.saveConversation(conv);
                             await this.loadConversations();
@@ -1153,6 +1227,9 @@ document.addEventListener('alpine:init', () => {
                     }
                 }
             });
+            this.activeStreamPromise = streamPromise;
+            try { await streamPromise; }
+            finally { if (this.activeStreamPromise === streamPromise) this.activeStreamPromise = null; }
         },
 
         // --- Interrompre la réponse ---
@@ -1180,6 +1257,7 @@ document.addEventListener('alpine:init', () => {
             return (document?.metadata?.extraction?.warnings || []).map(warning => {
                 if (typeof warning === 'string') return warning;
                 let text = this.t('extraction.' + warning.code);
+                if (text === 'extraction.' + warning.code) text = warning.code;
                 for (const [key, value] of Object.entries(warning)) text = text.replaceAll('{' + key + '}', String(value));
                 return text;
             });
@@ -1228,13 +1306,24 @@ document.addEventListener('alpine:init', () => {
                 const cleanHtml = window.DOMPurify.sanitize(html, {
                     ADD_ATTR: ['target', 'rel', 'class'],
                     FORBID_TAGS: ['iframe', 'object', 'embed', 'form', 'input', 'button'],
-                    FORBID_ATTR: ['style']
+                    FORBID_ATTR: ['style', 'id'],
+                    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.-]+(?:[^a-z+.-]|$))/i
                 });
 
                 const tempDiv = document.createElement('div');
                 tempDiv.innerHTML = cleanHtml;
+                tempDiv.querySelectorAll('svg, math, style, script, link, meta, base').forEach(element => element.remove());
+                tempDiv.querySelectorAll('[class]').forEach(element => {
+                    const safeLanguageClasses = element.tagName === 'CODE'
+                        ? Array.from(element.classList).filter(name => /^language-[a-z0-9_+#.-]{1,40}$/i.test(name))
+                        : [];
+                    if (safeLanguageClasses.length) element.className = safeLanguageClasses.join(' ');
+                    else element.removeAttribute('class');
+                });
 
                 tempDiv.querySelectorAll('a').forEach(link => {
+                    const href = link.getAttribute('href') || '';
+                    if (/^\s*(javascript|data|vbscript):/i.test(href)) link.removeAttribute('href');
                     link.setAttribute('target', '_blank');
                     link.setAttribute('rel', 'noopener noreferrer');
                 });
@@ -1304,7 +1393,9 @@ document.addEventListener('alpine:init', () => {
 
 // Helper global pour le bouton "Copier" des blocs de code
 window.sealarcaCopyCode = function(button, copiedLabel = 'Copié !') {
-    const rawCode = decodeURIComponent(button.dataset.code || '');
+    let rawCode = '';
+    try { rawCode = decodeURIComponent(button.dataset.code || ''); }
+    catch (_) { rawCode = button.dataset.code || ''; }
     if (navigator.clipboard && rawCode) {
         navigator.clipboard.writeText(rawCode).then(() => {
             const originalText = button.innerText;

@@ -14,6 +14,21 @@
         return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
     }
 
+    function normalizeTextWithOffsets(value) {
+        const original = String(value || '');
+        let normalized = '';
+        const offsets = [];
+        for (let index = 0; index < original.length;) {
+            const character = String.fromCodePoint(original.codePointAt(index));
+            const part = normalizeText(character);
+            for (let offset = 0; offset < part.length; offset += 1) offsets.push(index);
+            normalized += part;
+            index += character.length;
+        }
+        offsets.push(original.length);
+        return { normalized, offsets };
+    }
+
     function tokenize(value) {
         const matches = normalizeText(value).match(/[a-z0-9]{2,}/g) || [];
         return matches.filter(term => !STOP_WORDS.has(term));
@@ -52,6 +67,14 @@
         if (locator.type === 'spreadsheet-range' && locator.sheet) return locator.range ? 'feuille ' + locator.sheet + ', ' + locator.range : 'feuille ' + locator.sheet;
         if (locator.type === 'csv-row-range' && locator.startRow) return locator.endRow && locator.endRow !== locator.startRow ? 'lignes ' + locator.startRow + '–' + locator.endRow : 'ligne ' + locator.startRow;
         if (locator.type === 'text-line-range' && locator.startLine) return locator.endLine && locator.endLine !== locator.startLine ? 'lignes ' + locator.startLine + '–' + locator.endLine : 'ligne ' + locator.startLine;
+        if (locator.type === 'rtf-line-range' && locator.startLine) return locator.endLine && locator.endLine !== locator.startLine ? 'lignes ' + locator.startLine + '–' + locator.endLine : 'ligne ' + locator.startLine;
+        if (typeof locator.type === 'string' && locator.type.startsWith('docx-')) {
+            if (locator.paragraph) return locator.type.replace('docx-', '') + ' ' + locator.paragraph;
+            if (locator.table) return 'tableau ' + locator.table;
+            if (locator.noteId) return 'note ' + locator.noteId;
+            return locator.type.replace('docx-', '');
+        }
+        if (locator.type === 'odf-paragraph' && locator.paragraph) return 'bloc ' + locator.paragraph;
         if (locator.sheet) return 'feuille ' + locator.sheet;
         return '';
     }
@@ -87,7 +110,8 @@
         const results = [];
         for (const document of documents || []) {
             const markdown = String((document && document.markdown) || '');
-            const haystack = normalizeText(markdown);
+            const normalized = normalizeTextWithOffsets(markdown);
+            const haystack = normalized.normalized;
             const title = normalizeText((document && document.name) || '');
             const candidates = [];
             for (const term of terms) {
@@ -96,11 +120,12 @@
                 while (from < haystack.length && count < 12) {
                     const position = haystack.indexOf(term, from);
                     if (position < 0) break;
-                    const source = sourceForOffset(document, position);
-                    const sourceId = (source && source.id) || 'offset:' + Math.floor(position / 400);
+                    const markdownPosition = normalized.offsets[position] ?? markdown.length;
+                    const source = sourceForOffset(document, markdownPosition);
+                    const sourceId = (source && source.id) || 'offset:' + Math.floor(markdownPosition / 400);
                     let candidate = candidates.find(item => item.sourceId === sourceId);
                     if (!candidate) {
-                        candidate = { sourceId, position, source, matchedTerms: new Set(), occurrences: 0 };
+                        candidate = { sourceId, position: markdownPosition, source, matchedTerms: new Set(), occurrences: 0 };
                         candidates.push(candidate);
                     }
                     candidate.matchedTerms.add(term);
@@ -145,9 +170,12 @@
         const limit = Math.max(1, Number(options && options.limit) || 5);
         const results = localSearch([document], query, { maxResults: limit, perDocument: limit });
         if (results.length) return results;
-        return ((document && document.sourceMap) || []).slice(0, limit).map(source => ({
+        return ((document && document.sourceMap) || []).slice(0, limit).map((source, index) => ({
+            id: 'fallback_' + document.id + '_' + (source.id || index),
             documentId: document.id,
             documentName: document.name,
+            score: 0,
+            matchedTerms: [],
             sourceId: source.id || null,
             source,
             reference: sourceReference(document, source),
@@ -155,19 +183,31 @@
         })).filter(item => item.excerpt);
     }
 
-    function buildProfilePrompt(document, maxChars) {
-        const sources = ((document && document.sourceMap) || []).map(source => ({ id: source.id, reference: sourceReference(document, source) })).filter(source => source.id);
-        return [
+    function buildProfileRequest(document, maxChars) {
+        const markdown = String((document && document.markdown) || '');
+        const limit = Math.max(0, Number(maxChars) || DEFAULT_MAX_PROFILE_CHARS);
+        const sentMarkdown = markdown.slice(0, limit);
+        const sourceMap = ((document && document.sourceMap) || []).filter(source => source && source.id
+            && Number(source.markdownStart || 0) < sentMarkdown.length
+            && Number(source.markdownEnd || 0) > 0).slice(0, 100);
+        const truncatedSources = ((document && document.sourceMap) || []).length > sourceMap.length;
+        const sources = sourceMap.map(source => ({ id: source.id, reference: sourceReference(document, source) }));
+        const prompt = [
             'Analyse le document Markdown ci-dessous et retourne uniquement un objet JSON valide.',
             'Schéma: {"documentType":"", "summary":"", "people":[], "organizations":[], "importantDates":[{"date":"", "label":"", "sourceIds":[]}], "importantItems":[{"label":"", "details":"", "sourceIds":[]}], "sourceIds":[]}.',
             'La fiche doit rester générique, factuelle et concise. N’invente aucune personne, organisation, date, information ou provenance.',
             'Pour sourceIds, utilise exclusivement les identifiants de la liste SOURCE_MAP. Omettre toute référence non démontrable.',
             'Nom: ' + ((document && document.name) || ''),
             'Type technique: ' + ((document && (document.mimeType || document.extension)) || ''),
-            'SOURCE_MAP: ' + JSON.stringify(sources),
+            'SOURCE_MAP: ' + JSON.stringify(sources) + (truncatedSources ? '\n(Sources tronquées à 100 pour le contexte.)' : ''),
             'MARKDOWN:',
-            String((document && document.markdown) || '').slice(0, Number(maxChars) || DEFAULT_MAX_PROFILE_CHARS)
+            sentMarkdown
         ].join('\n\n');
+        return { prompt, sourceMap, sentMarkdown, truncatedSources };
+    }
+
+    function buildProfilePrompt(document, maxChars) {
+        return buildProfileRequest(document, maxChars).prompt;
     }
 
     function parseJsonObject(text) {
@@ -179,9 +219,10 @@
         return JSON.parse(raw.slice(start, end + 1));
     }
 
-    function normalizeProfile(rawProfile, document, inputFingerprint) {
+    function normalizeProfile(rawProfile, document, inputFingerprint, allowedSourceMap = null) {
         const raw = rawProfile && typeof rawProfile === 'object' ? rawProfile : {};
-        const sourceMap = Array.isArray(document && document.sourceMap) ? document.sourceMap : [];
+        const sourceMap = Array.isArray(allowedSourceMap) ? allowedSourceMap
+            : (Array.isArray(document && document.sourceMap) ? document.sourceMap : []);
         const allowed = new Map(sourceMap.filter(source => source && source.id).map(source => [source.id, source]));
         const normalizeSourceIds = value => uniqueStrings(value, 30).filter(id => allowed.has(id));
         const normalizeItems = (value, kind) => (Array.isArray(value) ? value : []).slice(0, 50).map(item => {
@@ -216,8 +257,8 @@
         };
     }
 
-    function extractProfile(text, document, fingerprint) {
-        return normalizeProfile(parseJsonObject(text), document, fingerprint);
+    function extractProfile(text, document, fingerprint, allowedSourceMap = null) {
+        return normalizeProfile(parseJsonObject(text), document, fingerprint, allowedSourceMap);
     }
 
     function extractCitations(text, documents) {
@@ -252,6 +293,9 @@
             this.concurrency = Math.max(1, Number(config.concurrency) || 2);
             this.onChange = config.onChange || (() => {});
             this.running = new Map();
+            this.ownerId = `queue_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+            this.leaseDurationMs = 180000;
+            this.heartbeatIntervalMs = 30000;
             this.timer = null;
             this.started = false;
         }
@@ -265,6 +309,7 @@
             this.started = false;
             clearTimeout(this.timer);
             this.timer = null;
+            for (const running of this.running.values()) running.controller.abort('queue_stopped');
         }
         async enqueueDocument(document) {
             const inputFingerprint = fingerprintDocument(document);
@@ -280,17 +325,14 @@
             return results;
         }
         async cancel(jobId) {
-            const controller = this.running.get(jobId);
-            if (controller) controller.abort();
-            const job = await this.db.getProcessingJob(jobId);
-            if (job) await this.db.saveProcessingJob({ ...job, status: 'cancelled', checkpoint: { stage: 'cancelled', at: Date.now() }, updatedAt: Date.now() });
+            const job = await this.db.cancelProcessingJob(jobId);
+            const running = this.running.get(jobId);
+            if (job && running) running.controller.abort('cancelled');
             await this.notify();
         }
         async retry(jobId) {
-            const job = await this.db.getProcessingJob(jobId);
-            if (!job) return;
-            await this.db.saveProcessingJob({ ...job, status: 'pending', attempts: 0, nextRunAt: Date.now(), lastError: null, checkpoint: { stage: 'queued_again', at: Date.now() }, updatedAt: Date.now() });
-            this.schedule(0);
+            const job = await this.db.retryProcessingJob(jobId);
+            if (job) this.schedule(0);
         }
         schedule(delay) {
             if (!this.started) return;
@@ -304,52 +346,88 @@
             if (!this.started) return;
             const available = this.concurrency - this.running.size;
             if (available <= 0) { this.schedule(500); return; }
-            const jobs = await this.db.getRunnableProcessingJobs(Date.now(), available);
+            const jobs = await this.db.claimRunnableProcessingJobs(Date.now(), available, this.ownerId, this.leaseDurationMs);
             for (const job of jobs) this.run(job);
             await this.notify();
             this.schedule(jobs.length ? 250 : 1500);
         }
         async run(job) {
             const controller = new AbortController();
-            this.running.set(job.id, controller);
-            const attempt = Number(job.attempts || 0) + 1;
-            await this.db.saveProcessingJob({ ...job, status: 'running', attempts: attempt, startedAt: Date.now(), checkpoint: { stage: 'request_started', attempt, at: Date.now() }, updatedAt: Date.now() });
-            await this.notify();
+            const leaseToken = job.leaseToken;
+            const attempt = Number(job.attempts || 1);
+            this.running.set(job.id, { controller, leaseToken });
+            let heartbeatBusy = false;
+            const heartbeat = setInterval(async () => {
+                if (heartbeatBusy || controller.signal.aborted) return;
+                heartbeatBusy = true;
+                try {
+                    const renewed = await this.db.renewProcessingJobLease(job.id, this.ownerId, leaseToken, Date.now(), this.leaseDurationMs);
+                    if (!renewed) controller.abort('lease_lost');
+                } catch (_) {
+                    controller.abort('lease_lost');
+                } finally { heartbeatBusy = false; }
+            }, this.heartbeatIntervalMs);
             try {
+                await this.notify();
                 const document = await this.db.getDocument(job.documentId);
                 if (!document) throw Object.assign(new Error('Document introuvable.'), { retryable: false });
                 const currentFingerprint = fingerprintDocument(document);
                 const existing = await this.db.getDocumentProfile(document.id);
                 if (existing && existing.status === 'valid' && existing.inputFingerprint === currentFingerprint) {
-                    await this.db.saveProcessingJob({ ...job, status: 'completed', attempts: attempt, completedAt: Date.now(), checkpoint: { stage: 'deduplicated', at: Date.now() }, updatedAt: Date.now() });
+                    await this.db.updateProcessingJobIfOwner(job.id, this.ownerId, leaseToken, {
+                        status: 'completed', attempts: attempt, completedAt: Date.now(),
+                        checkpoint: { stage: 'deduplicated', at: Date.now() }
+                    });
                     return;
                 }
                 if (currentFingerprint !== job.inputFingerprint) {
-                    await this.db.saveProcessingJob({ ...job, status: 'cancelled', attempts: attempt, checkpoint: { stage: 'stale_input', at: Date.now() }, updatedAt: Date.now(), lastError: 'Le document a changé.' });
-                    await this.enqueueDocument(document);
+                    const stale = await this.db.updateProcessingJobIfOwner(job.id, this.ownerId, leaseToken, {
+                        status: 'cancelled', attempts: attempt, lastError: 'Le document a changé.',
+                        checkpoint: { stage: 'stale_input', at: Date.now() }
+                    });
+                    if (stale) await this.enqueueDocument(document);
                     return;
                 }
                 const credentials = this.getCredentials() || {};
                 if (!credentials.apiKey || !credentials.model) {
-                    await this.db.saveProcessingJob({ ...job, status: 'pending', attempts: attempt - 1, nextRunAt: Date.now() + 60000, checkpoint: { stage: 'awaiting_api_configuration', at: Date.now() }, updatedAt: Date.now() });
+                    await this.db.updateProcessingJobIfOwner(job.id, this.ownerId, leaseToken, {
+                        status: 'pending', attempts: Math.max(0, attempt - 1), nextRunAt: Date.now() + 60000,
+                        checkpoint: { stage: 'awaiting_api_configuration', at: Date.now() }
+                    });
                     return;
                 }
-                const response = await this.api.completeResponse({ apiKey: credentials.apiKey, model: credentials.model, messages: [{ role: 'user', content: buildProfilePrompt(document) }], instructions: 'Tu extrais une fiche documentaire JSON strictement fondée sur la source fournie.', signal: controller.signal, maxRetries: 0 });
-                const profile = extractProfile(response.text, document, currentFingerprint);
-                await this.db.saveDocumentProfile(profile);
-                await this.db.saveProcessingJob({ ...job, status: 'completed', attempts: attempt, completedAt: Date.now(), nextRunAt: null, lastError: null, checkpoint: { stage: 'profile_saved', at: Date.now() }, updatedAt: Date.now() });
+                const request = buildProfileRequest(document);
+                const timeoutMs = 120000;
+                const timeoutController = new AbortController();
+                const timeoutId = setTimeout(() => timeoutController.abort('timeout'), timeoutMs);
+                const forwardAbort = () => {
+                    try { timeoutController.abort(controller.signal.reason || 'cancelled'); } catch (_) {}
+                };
+                if (controller.signal.aborted) timeoutController.abort(controller.signal.reason || 'cancelled');
+                else controller.signal.addEventListener('abort', forwardAbort, { once: true });
+                let response;
+                try {
+                    response = await this.api.completeResponse({ apiKey: credentials.apiKey, model: credentials.model, messages: [{ role: 'user', content: request.prompt }], instructions: 'Tu extrais une fiche documentaire JSON strictement fondée sur la source fournie.', signal: timeoutController.signal, maxRetries: 0 });
+                } finally {
+                    clearTimeout(timeoutId);
+                    controller.signal.removeEventListener?.('abort', forwardAbort);
+                }
+                const profile = extractProfile(response.text, document, currentFingerprint, request.sourceMap);
+                await this.db.saveDocumentProfileIfJobOwner(profile, job.id, this.ownerId, leaseToken);
             } catch (error) {
-                const latest = await this.db.getProcessingJob(job.id);
-                if ((latest && latest.status === 'cancelled') || controller.signal.aborted) {
-                    await this.db.saveProcessingJob({ ...(latest || job), status: 'cancelled', attempts: attempt, checkpoint: { stage: 'cancelled', at: Date.now() }, updatedAt: Date.now() });
-                } else {
+                if (!controller.signal.aborted) {
                     const retryable = isRetryableError(error);
                     const exhausted = attempt >= Number(job.maxAttempts || 5);
                     const status = retryable && !exhausted ? 'pending' : 'failed';
                     const delay = status === 'pending' ? backoffDelay(attempt, error.retryAfterMs) : 0;
-                    await this.db.saveProcessingJob({ ...(latest || job), status, attempts: attempt, nextRunAt: status === 'pending' ? Date.now() + delay : null, lastError: String(error.message || error), checkpoint: { stage: status === 'pending' ? 'retry_scheduled' : 'failed', attempt, retryInMs: delay, at: Date.now() }, updatedAt: Date.now() });
+                    await this.db.updateProcessingJobIfOwner(job.id, this.ownerId, leaseToken, {
+                        status, attempts: attempt, nextRunAt: status === 'pending' ? Date.now() + delay : null,
+                        lastError: String(error.message || error),
+                        checkpoint: { stage: status === 'pending' ? 'retry_scheduled' : 'failed', attempt, retryInMs: delay, at: Date.now() }
+                    });
                 }
             } finally {
+                clearInterval(heartbeat);
                 this.running.delete(job.id);
                 await this.notify();
                 this.schedule(0);
@@ -357,5 +435,5 @@
         }
     }
 
-    global.SealarcaP1 = { PROFILE_SCHEMA_VERSION, PROFILE_PROMPT_VERSION, normalizeText, tokenize, fingerprintDocument, locatorText, sourceReference, sourceForOffset, localSearch, selectRelevantDocuments, citableExcerpts, buildProfilePrompt, extractProfile, normalizeProfile, extractCitations, isRetryableError, backoffDelay, PersistentJobQueue };
+    global.SealarcaP1 = { PROFILE_SCHEMA_VERSION, PROFILE_PROMPT_VERSION, normalizeText, tokenize, fingerprintDocument, locatorText, sourceReference, sourceForOffset, localSearch, selectRelevantDocuments, citableExcerpts, buildProfileRequest, buildProfilePrompt, extractProfile, normalizeProfile, extractCitations, isRetryableError, backoffDelay, PersistentJobQueue };
 })(typeof window !== 'undefined' ? window : globalThis);

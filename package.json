@@ -1,12 +1,24 @@
 {
   "name": "sealarca-desk",
-  "version": "1.0.4",
+  "version": "1.1.0",
   "private": true,
   "description": "Client local source available pour Sealarca Vault avec dossiers et bibliothèque documentaire Markdown",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "check": "node --check js/i18n.js && node --check js/db.js && node --check js/doc-handler.js && node --check js/api.js && node --check js/app.js && node --test tests/*.test.js",
-    "release:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1"
+    "check": "node --check js/i18n.js && node --check js/db.js && node --check js/doc-handler.js && node --check js/api.js && node --check js/p1.js && node --check js/app.js && node --check scripts/build-vendor.js && node --test tests/*.test.js",
+    "vendor:build": "node scripts/build-vendor.js",
+    "release:build": "npm run vendor:build && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1"
   },
-  "license": "SEE LICENSE IN LICENSE"
+  "license": "SEE LICENSE IN LICENSE",
+  "devDependencies": {
+    "@alpinejs/csp": "3.16.2",
+    "@xmldom/xmldom": "0.9.12",
+    "dompurify": "3.4.16",
+    "esbuild": "0.28.2",
+    "fake-indexeddb": "6.2.5",
+    "jsdom": "27.2.0",
+    "jszip": "3.10.2",
+    "marked": "18.0.7",
+    "pdfjs-dist": "6.3.289"
+  }
 }
