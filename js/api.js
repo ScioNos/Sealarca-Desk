@@ -2,7 +2,7 @@
  * Sealarca-Desk — client OpenAI-compatible Responses API.
  */
 
-const DEFAULT_SEALARCA_BASE_URL = 'https://sealarca.ch/v1';
+const DEFAULT_SEALARCA_BASE_URL = 'https://api.sealarca.ch/v1';
 const REQUEST_TIMEOUT_MS = 120000;
 const DEFAULT_RETRY_LIMIT = 3;
 
@@ -130,7 +130,7 @@ class SealarcaAPI {
                 },
                 body: JSON.stringify(payload),
                 signal: controller.signal
-            }, { context: 'réponse', maxRetries: DEFAULT_RETRY_LIMIT });
+            }, { context: 'réponse', maxRetries: DEFAULT_RETRY_LIMIT, retryNetworkErrors: false });
 
             if (!response.ok) throw await this._createHttpError(response, 'réponse');
             if (!response.body) throw new Error('Le serveur n’a renvoyé aucun flux.');
@@ -239,7 +239,7 @@ class SealarcaAPI {
                 headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json', Accept: 'application/json' },
                 body: JSON.stringify(payload),
                 signal: controller.signal
-            }, { context: 'réponse', maxRetries });
+            }, { context: 'réponse', maxRetries, retryNetworkErrors: false });
             const data = await response.json().catch(() => { throw new Error('La réponse API JSON est invalide.'); });
             const text = this._extractResponseText(data);
             if (!text) throw new Error('La réponse API ne contient aucun texte exploitable.');
@@ -268,7 +268,18 @@ class SealarcaAPI {
         return parts.join('');
     }
 
-    async _requestWithRetry(url, options, { context = 'requête', maxRetries = DEFAULT_RETRY_LIMIT } = {}) {
+    async _requestWithRetry(url, options, { context = 'requête', maxRetries = DEFAULT_RETRY_LIMIT, retryNetworkErrors = null } = {}) {
+        const method = String(options?.method || 'GET').toUpperCase();
+        // POST /responses n'est pas idempotent : l'API actuelle n'expose aucune clé
+        // d'idempotence (payload avec store:false uniquement, sans Idempotency-Key ni request-id).
+        // Une panne réseau après envoi est ambiguë : le serveur peut avoir traité la requête
+        // sans que Desk reçoive la réponse. Un retry automatique déclencherait alors une
+        // deuxième inférence. On ne rejoue donc les erreurs réseau sans réponse que pour
+        // les requêtes sûres (GET /models). Les erreurs HTTP avec réponse explicite
+        // (429, 408, 425, 5xx retryables) restent rejouées avec backoff ci-dessus.
+        const allowNetworkRetry = retryNetworkErrors === null || retryNetworkErrors === undefined
+            ? method === 'GET'
+            : Boolean(retryNetworkErrors);
         let attempt = 0;
         while (true) {
             try {
@@ -280,6 +291,7 @@ class SealarcaAPI {
                 attempt += 1;
             } catch (error) {
                 if (error.name === 'AbortError') throw error;
+                if (!allowNetworkRetry) throw error;
                 const retryable = error.retryable === true || /network|fetch|timeout|réseau|connexion/i.test(String(error.message || ''));
                 if (!retryable || attempt >= maxRetries) throw error;
                 await this._delay(error.retryAfterMs || this._backoffDelay(attempt + 1), options.signal);

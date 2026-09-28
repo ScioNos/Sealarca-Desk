@@ -24,4 +24,4 @@ The audit also noted that a retry after a network failure may duplicate a billab
 
 Extract `Sealarca-Desk-v1.1.0.zip` and open `Sealarca-Desk/index.html`. Compare the archive SHA-256 with `Sealarca-Desk-v1.1.0.sha256`.
 
-Desk continues to use `https://sealarca.ch/v1`. No key or customer document is included in the distribution. Source available under PolyForm Perimeter License 1.0.1.
+Desk continues to use `https://api.sealarca.ch/v1`. No key or customer document is included in the distribution. Source available under PolyForm Perimeter License 1.0.1.

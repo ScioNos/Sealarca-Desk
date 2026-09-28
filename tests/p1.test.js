@@ -177,3 +177,124 @@ test('la queue checkpoint une limitation 429 et la reprogramme', async () => {
     assert.equal(saved.checkpoint.retryInMs, 2500);
     assert.ok(saved.nextRunAt >= before + 2500);
 });
+
+test('abortJobsForDocument annule uniquement le document supprimé, pending ou running', async () => {
+    const p1 = loadP1();
+    const queue = new p1.PersistentJobQueue({ db: {}, api: {}, getCredentials: () => ({}) });
+    queue.running.set('job-a1', { controller: new AbortController(), leaseToken: 't1', documentId: 'doc-a', folderId: 'folder-1' });
+    queue.running.set('job-a2', { controller: new AbortController(), leaseToken: 't2', documentId: 'doc-a', folderId: 'folder-1' });
+    queue.running.set('job-b', { controller: new AbortController(), leaseToken: 't3', documentId: 'doc-b', folderId: 'folder-1' });
+    const aborted = Array.from(queue.abortJobsForDocument('doc-a', 'document_deleted')).sort();
+    assert.deepEqual(aborted, ['job-a1', 'job-a2']);
+    assert.equal(queue.running.get('job-a1').controller.signal.aborted, true);
+    assert.equal(queue.running.get('job-a1').controller.signal.reason, 'document_deleted');
+    assert.equal(queue.running.get('job-a2').controller.signal.aborted, true);
+    assert.equal(queue.running.get('job-b').controller.signal.aborted, false);
+    assert.deepEqual(Array.from(queue.abortJobsForDocument('doc-pending-sans-running')), []);
+    assert.deepEqual(Array.from(queue.abortJobsForDocument('')), []);
+    assert.deepEqual(Array.from(queue.abortJobsForDocument(null)), []);
+});
+
+test('abortJobsForFolder annule tous les traitements du dossier sans toucher les autres', () => {
+    const p1 = loadP1();
+    const queue = new p1.PersistentJobQueue({ db: {}, api: {}, getCredentials: () => ({}) });
+    queue.running.set('job-f1-a', { controller: new AbortController(), leaseToken: 't1', documentId: 'doc-1', folderId: 'folder-x' });
+    queue.running.set('job-f1-b', { controller: new AbortController(), leaseToken: 't2', documentId: 'doc-2', folderId: 'folder-x' });
+    queue.running.set('job-other', { controller: new AbortController(), leaseToken: 't3', documentId: 'doc-3', folderId: 'folder-y' });
+    const aborted = Array.from(queue.abortJobsForFolder('folder-x', 'folder_deleted')).sort();
+    assert.deepEqual(aborted, ['job-f1-a', 'job-f1-b']);
+    assert.equal(queue.running.get('job-f1-a').controller.signal.aborted, true);
+    assert.equal(queue.running.get('job-f1-b').controller.signal.aborted, true);
+    assert.equal(queue.running.get('job-other').controller.signal.aborted, false);
+    assert.deepEqual(Array.from(queue.abortJobsForFolder('folder-vide')), []);
+});
+
+test('la suppression pendant la génération aborte immédiatement sans attendre le heartbeat et garde le garde-fou final', async () => {
+    const p1 = loadP1();
+    const docA = { id: 'doc-del', folderId: 'folder-1', name: 'supprime.txt', hash: 'h-a', extension: 'txt', markdown: 'Contenu A supprimer', sourceMap: [] };
+    const docB = { id: 'doc-keep', folderId: 'folder-1', name: 'garde.txt', hash: 'h-b', extension: 'txt', markdown: 'Contenu B garde', sourceMap: [] };
+    const profiles = new Map();
+    const jobs = new Map();
+    let deletedA = false;
+    let releaseB;
+    const gateB = new Promise(resolve => { releaseB = resolve; });
+    const db = {
+        async getDocument(id) {
+            if (id === 'doc-del' && deletedA) return null;
+            return id === 'doc-del' ? docA : docB;
+        },
+        async getDocumentProfile(id) { return profiles.get(id) || null; },
+        async renewProcessingJobLease() { return true; },
+        async saveDocumentProfileIfJobOwner(profile, id, owner, token) {
+            const job = jobs.get(id);
+            if (!job || job.status !== 'running' || job.leaseOwner !== owner || job.leaseToken !== token) return false;
+            if (deletedA && profile.documentId === 'doc-del') return false;
+            profiles.set(profile.documentId, profile);
+            jobs.set(id, { ...job, status: 'completed' });
+            return true;
+        },
+        async updateProcessingJobIfOwner(id, owner, token, changes) {
+            const job = jobs.get(id);
+            if (!job || job.status !== 'running' || job.leaseOwner !== owner || job.leaseToken !== token) return false;
+            jobs.set(id, { ...job, ...changes });
+            return true;
+        }
+    };
+    const api = {
+        async completeResponse({ messages, signal }) {
+            const prompt = String(messages?.[0]?.content || '');
+            if (prompt.includes('supprime.txt')) {
+                await new Promise((resolve, reject) => {
+                    if (signal?.aborted) {
+                        reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+                        return;
+                    }
+                    signal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+                });
+            } else {
+                await Promise.race([
+                    gateB,
+                    new Promise((resolve, reject) => {
+                        if (signal?.aborted) {
+                            reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+                            return;
+                        }
+                        signal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+                    })
+                ]);
+            }
+            if (signal?.aborted) throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+            return { text: JSON.stringify({ documentType: 'note', summary: 'Résumé', people: [], organizations: [], importantDates: [], importantItems: [] }) };
+        }
+    };
+    const queue = new p1.PersistentJobQueue({ db, api, getCredentials: () => ({ apiKey: 'key', model: 'm' }) });
+    queue.heartbeatIntervalMs = 60000;
+    const jobA = { id: 'job-del', type: 'document-profile', documentId: 'doc-del', folderId: 'folder-1', inputFingerprint: p1.fingerprintDocument(docA), status: 'running', attempts: 1, maxAttempts: 5, leaseOwner: queue.ownerId, leaseToken: 'token-del' };
+    const jobB = { id: 'job-keep', type: 'document-profile', documentId: 'doc-keep', folderId: 'folder-1', inputFingerprint: p1.fingerprintDocument(docB), status: 'running', attempts: 1, maxAttempts: 5, leaseOwner: queue.ownerId, leaseToken: 'token-keep' };
+    jobs.set(jobA.id, jobA);
+    jobs.set(jobB.id, jobB);
+    const runA = queue.run(jobA);
+    const runB = queue.run(jobB);
+    try {
+        await new Promise(resolve => setTimeout(resolve, 50));
+        assert.equal(queue.running.size, 2);
+        const aborted = Array.from(queue.abortJobsForDocument('doc-del', 'document_deleted'));
+        assert.deepEqual(aborted, ['job-del']);
+        assert.equal(queue.running.get('job-del').controller.signal.aborted, true);
+        assert.equal(queue.running.get('job-keep').controller.signal.aborted, false);
+        deletedA = true;
+        jobs.delete('job-del');
+        releaseB();
+        await Promise.all([runA, runB]);
+        assert.equal(queue.running.size, 0);
+        assert.equal(profiles.get('doc-del'), undefined);
+        assert.equal(profiles.get('doc-keep')?.status, 'valid');
+        assert.equal(jobs.get('job-keep')?.status, 'completed');
+        assert.equal(jobs.get('job-del'), undefined);
+    } finally {
+        try { releaseB(); } catch (_) {}
+        try { queue.abortJobsForDocument('doc-del', 'cleanup'); } catch (_) {}
+        try { queue.abortJobsForDocument('doc-keep', 'cleanup'); } catch (_) {}
+        await Promise.allSettled([runA, runB]);
+    }
+});

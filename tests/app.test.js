@@ -125,6 +125,7 @@ test('la suppression d’une conversation ou du dossier actif attend la fin du s
     const { app, window } = loadApp({
         sealarcaDb: {
             async deleteConversation() { calls.push('delete-conversation'); },
+            async getDocuments() { return []; },
             async deleteFolder() { calls.push('delete-folder'); return true; }
         },
         sealarcaApi: { abortCurrentRequest() { calls.push('abort'); } }
@@ -163,4 +164,44 @@ test('la suppression d’une conversation ou du dossier actif attend la fin du s
     await deletingFolder;
     assert.ok(calls.indexOf('delete-folder') > calls.indexOf('abort'));
     assert.ok(calls.includes('select:next'));
+});
+
+test('la suppression document/dossier annule immédiatement les traitements actifs ciblés', async () => {
+    const queueCalls = [];
+    const dbCalls = [];
+    const order = [];
+    const { app } = loadApp({
+        sealarcaDb: {
+            async deleteDocument(id) { dbCalls.push(`delete-document:${id}`); order.push(`delete-document:${id}`); },
+            async getDocuments(folderId) {
+                dbCalls.push(`get-documents:${folderId}`);
+                return [{ id: 'doc-in-folder', folderId }];
+            },
+            async deleteFolder(id) { dbCalls.push(`delete-folder:${id}`); order.push(`delete-folder:${id}`); return true; }
+        }
+    });
+    app.t = key => key;
+    app.loadDocuments = async () => {};
+    app.loadFolders = async () => { app.folders = [{ id: 'next' }]; };
+    app.selectFolder = async id => { app.activeFolderId = id; };
+    app.selectedDocumentIds = ['doc-x'];
+    app.folders = [{ id: 'folder-x' }, { id: 'next' }];
+    app.p1Queue = {
+        abortJobsForDocument(id, reason) { queueCalls.push(`abort-document:${id}:${reason}`); order.push(`abort-document:${id}`); return [id]; },
+        abortJobsForFolder(id, reason) { queueCalls.push(`abort-folder:${id}:${reason}`); order.push(`abort-folder:${id}`); return [id]; },
+        abortJobsForDocuments(ids, reason) { queueCalls.push(`abort-documents:${ids.join(',')}:${reason}`); return ids; }
+    };
+    await app.deleteDocument('doc-x');
+    assert.ok(queueCalls.includes('abort-document:doc-x:document_deleted'));
+    assert.ok(dbCalls.includes('delete-document:doc-x'));
+    assert.ok(order.indexOf('abort-document:doc-x') < order.indexOf('delete-document:doc-x'));
+
+    queueCalls.length = 0;
+    dbCalls.length = 0;
+    order.length = 0;
+    await app.deleteFolder('folder-x');
+    assert.ok(queueCalls.includes('abort-folder:folder-x:folder_deleted'));
+    assert.ok(queueCalls.some(call => call.startsWith('abort-documents:doc-in-folder')));
+    assert.ok(dbCalls.includes('delete-folder:folder-x'));
+    assert.ok(order.indexOf('abort-folder:folder-x') < order.indexOf('delete-folder:folder-x'));
 });

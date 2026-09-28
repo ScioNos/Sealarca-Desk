@@ -330,6 +330,40 @@
             if (job && running) running.controller.abort('cancelled');
             await this.notify();
         }
+        abortJobsForDocument(documentId, reason = 'document_deleted') {
+            if (!documentId) return [];
+            const aborted = [];
+            for (const [jobId, entry] of this.running.entries()) {
+                if (entry && entry.documentId === documentId) {
+                    try { entry.controller.abort(reason); } catch (_) { /* déjà terminé */ }
+                    aborted.push(jobId);
+                }
+            }
+            return aborted;
+        }
+        abortJobsForFolder(folderId, reason = 'folder_deleted') {
+            if (!folderId) return [];
+            const aborted = [];
+            for (const [jobId, entry] of this.running.entries()) {
+                if (entry && entry.folderId === folderId) {
+                    try { entry.controller.abort(reason); } catch (_) { /* déjà terminé */ }
+                    aborted.push(jobId);
+                }
+            }
+            return aborted;
+        }
+        abortJobsForDocuments(documentIds, reason = 'document_deleted') {
+            const ids = new Set((documentIds || []).filter(Boolean));
+            if (!ids.size) return [];
+            const aborted = [];
+            for (const [jobId, entry] of this.running.entries()) {
+                if (entry && ids.has(entry.documentId)) {
+                    try { entry.controller.abort(reason); } catch (_) { /* déjà terminé */ }
+                    aborted.push(jobId);
+                }
+            }
+            return aborted;
+        }
         async retry(jobId) {
             const job = await this.db.retryProcessingJob(jobId);
             if (job) this.schedule(0);
@@ -355,7 +389,7 @@
             const controller = new AbortController();
             const leaseToken = job.leaseToken;
             const attempt = Number(job.attempts || 1);
-            this.running.set(job.id, { controller, leaseToken });
+            this.running.set(job.id, { controller, leaseToken, documentId: job.documentId, folderId: job.folderId });
             let heartbeatBusy = false;
             const heartbeat = setInterval(async () => {
                 if (heartbeatBusy || controller.signal.aborted) return;

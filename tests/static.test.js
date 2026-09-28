@@ -29,6 +29,27 @@ test('l’endpoint API n’est pas configurable par l’utilisateur', () => {
     assert.doesNotMatch(app, /baseUrl\s*:/);
 });
 
+test('l’endpoint API fixe utilise api.sealarca.ch partout et la CSP l’autorise', () => {
+    const api = read('js/api.js');
+    const html = read('index.html');
+    const i18n = read('js/i18n.js');
+    assert.match(api, /https:\/\/api\.sealarca\.ch\/v1/);
+    assert.doesNotMatch(api, /https:\/\/sealarca\.ch\/v1/);
+    assert.match(html, /connect-src[^;]*https:\/\/api\.sealarca\.ch/);
+    assert.doesNotMatch(html, /connect-src[^;]*https:\/\/sealarca\.ch\//);
+    assert.ok(!html.includes('connect-src') || !/connect-src[^;]*\shttps:\/\/sealarca\.ch[\s"';]/.test(html));
+    assert.doesNotMatch(html, /https:\/\/sealarca\.ch\/v1/);
+    for (const hint of i18n.match(/https:\/\/[a-z0-9.-]+\/v1/g) || []) {
+        assert.equal(hint, 'https://api.sealarca.ch/v1');
+    }
+    for (const file of ['README.md', 'README.fr.md', 'README.de.md', 'README.it.md', 'README.es.md', 'SECURITY.md', 'RELEASE_NOTES.md']) {
+        const contents = read(file);
+        assert.doesNotMatch(contents, /https:\/\/sealarca\.ch\/v1/);
+    }
+    assert.match(read('README.md'), /https:\/\/api\.sealarca\.ch\/v1/);
+    assert.match(read('SECURITY.md'), /https:\/\/api\.sealarca\.ch\/v1/);
+});
+
 test('le rendu Markdown interdit les contenus actifs', () => {
     const app = read('js/app.js');
     const html = read('index.html');

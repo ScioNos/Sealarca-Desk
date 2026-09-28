@@ -15,7 +15,7 @@
 
 ## Panoramica
 
-Sealarca-Desk è un’applicazione statica a pagina singola per chat e lavoro documentale con Sealarca Vault. L’interfaccia e tutte le librerie di runtime vengono caricate localmente; la scoperta dei modelli, le risposte chat e i profili documentali generati dall’IA richiedono una connessione all’endpoint API fisso `https://sealarca.ch/v1`.
+Sealarca-Desk è un’applicazione statica a pagina singola per chat e lavoro documentale con Sealarca Vault. L’interfaccia e tutte le librerie di runtime vengono caricate localmente; la scoperta dei modelli, le risposte chat e i profili documentali generati dall’IA richiedono una connessione all’endpoint API fisso `https://api.sealarca.ch/v1`.
 
 Il runtime non usa backend applicativi intermedi, SDK di analisi o CDN.
 
@@ -43,7 +43,7 @@ Il runtime non usa backend applicativi intermedi, SDK di analisi o CDN.
 - Conversazioni, messaggi, cartelle, documenti, profili, job di elaborazione, ruoli, lingua, modello e preferenze UI sono memorizzati localmente in IndexedDB. Il tema è in `localStorage`.
 - Le richieste chat inviano la cronologia testuale e soltanto i documenti scelti manualmente o gli estratti selezionati automaticamente.
 - I job di profilazione inviano il Markdown del documento interessato al modello Sealarca selezionato.
-- Le chiamate API dell’applicazione puntano a `https://sealarca.ch/v1`. La CSP consente anche origini locali di sviluppo su `localhost` e `127.0.0.1`.
+- Le chiamate API dell’applicazione puntano a `https://api.sealarca.ch/v1`. La CSP consente anche origini locali di sviluppo su `localhost` e `127.0.0.1`.
 - “Locale” e “senza CDN” descrivono caricamento, analisi, indicizzazione e archiviazione; le operazioni IA non funzionano offline.
 
 ## Avvio rapido

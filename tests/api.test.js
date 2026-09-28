@@ -39,7 +39,7 @@ function responseFromRawSse(raw) {
 
 test('fetchModels normalise, déduplique et trie les modèles', async () => {
     const api = loadApi(async (url, options) => {
-        assert.equal(url, 'https://sealarca.ch/v1/models');
+        assert.equal(url, 'https://api.sealarca.ch/v1/models');
         assert.equal(options.headers.Authorization, 'Bearer secret');
         return new Response(JSON.stringify({ data: [
             { id: 'z-model', owned_by: 'test' },
@@ -84,7 +84,7 @@ test('streamResponse utilise /responses et consomme les événements typés', as
         });
     });
 
-    assert.equal(request.url, 'https://sealarca.ch/v1/responses');
+    assert.equal(request.url, 'https://api.sealarca.ch/v1/responses');
     assert.deepEqual(request.body, {
         model: 'model-a',
         input: [{ role: 'user', content: 'Bonjour' }],
@@ -151,7 +151,7 @@ test('completeResponse utilise le modèle découvert et extrait le texte JSON', 
         return new Response(JSON.stringify({ output: [{ content: [{ type: 'output_text', text: '{"summary":"ok"}' }] }] }), { status: 200, headers: { 'content-type': 'application/json' } });
     });
     const result = await api.completeResponse({ apiKey: 'secret', model: 'modele-dynamique', messages: [{ role: 'user', content: 'Fiche' }] });
-    assert.equal(request.url, 'https://sealarca.ch/v1/responses');
+    assert.equal(request.url, 'https://api.sealarca.ch/v1/responses');
     assert.equal(request.body.model, 'modele-dynamique');
     assert.equal(request.body.stream, false);
     assert.equal(result.text, '{"summary":"ok"}');
@@ -169,5 +169,48 @@ test('completeResponse reprend après un HTTP 429 sans dupliquer le payload', as
     const result = await api.completeResponse({ apiKey: 'secret', model: 'modele-dynamique', messages: [{ role: 'user', content: 'Fiche' }], maxRetries: 1 });
     assert.equal(calls, 2);
     assert.equal(bodies[0], bodies[1]);
+    assert.equal(result.text, 'ok');
+});
+
+test('l’endpoint API fixe utilise api.sealarca.ch et jamais l’ancien hôte', () => {
+    assert.match(apiSource, /https:\/\/api\.sealarca\.ch\/v1/);
+    assert.doesNotMatch(apiSource, /https:\/\/sealarca\.ch\/v1/);
+    assert.equal(loadApi(async () => new Response(JSON.stringify({ data: [] }), { status: 200 })).constructor.name, 'SealarcaAPI');
+});
+
+test('un POST /responses en échec réseau ambigu n’est pas rejoué (anti double inférence)', async () => {
+    let calls = 0;
+    const api = loadApi(async () => {
+        calls += 1;
+        throw new Error('fetch failed: network connection lost');
+    });
+    await assert.rejects(
+        () => api.completeResponse({ apiKey: 'secret', model: 'modele-dynamique', messages: [{ role: 'user', content: 'Fiche' }], maxRetries: 3 }),
+        /fetch failed/
+    );
+    assert.equal(calls, 1);
+});
+
+test('un GET /models en échec réseau reste rejoué (idempotent)', async () => {
+    let calls = 0;
+    const api = loadApi(async () => {
+        calls += 1;
+        if (calls === 1) throw new Error('Network request failed');
+        return new Response(JSON.stringify({ data: ['m1'] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    const models = await api.fetchModels('secret');
+    assert.equal(calls, 2);
+    assert.deepEqual(models.map(model => model.id), ['m1']);
+});
+
+test('un POST /responses avec HTTP 500 explicite reste rejoué avec backoff', async () => {
+    let calls = 0;
+    const api = loadApi(async () => {
+        calls += 1;
+        if (calls === 1) return new Response('erreur serveur', { status: 500 });
+        return new Response(JSON.stringify({ output_text: 'ok' }), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    const result = await api.completeResponse({ apiKey: 'secret', model: 'modele-dynamique', messages: [{ role: 'user', content: 'Fiche' }], maxRetries: 1 });
+    assert.equal(calls, 2);
     assert.equal(result.text, 'ok');
 });

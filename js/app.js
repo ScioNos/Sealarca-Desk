@@ -714,6 +714,13 @@ document.addEventListener('alpine:init', () => {
             }
             if (!window.confirm(this.t('folders.deleteConfirm'))) return;
             if (id === this.activeFolderId) await this.cancelAndWaitForStream();
+            try {
+                this.p1Queue?.abortJobsForFolder?.(id, 'folder_deleted');
+                const folderDocuments = await window.sealarcaDb.getDocuments(id).catch(() => []);
+                if (Array.isArray(folderDocuments) && folderDocuments.length) {
+                    this.p1Queue?.abortJobsForDocuments?.(folderDocuments.map(document => document?.id), 'folder_deleted');
+                }
+            } catch (_) { /* annulation best-effort */ }
             const deleted = await window.sealarcaDb.deleteFolder(id);
             if (!deleted) return;
             await this.loadFolders();
@@ -770,6 +777,7 @@ document.addEventListener('alpine:init', () => {
 
         async deleteDocument(id) {
             if (!window.confirm(this.t('documents.deleteConfirm'))) return;
+            try { this.p1Queue?.abortJobsForDocument?.(id, 'document_deleted'); } catch (_) { /* annulation best-effort */ }
             await window.sealarcaDb.deleteDocument(id);
             this.selectedDocumentIds = this.selectedDocumentIds.filter(documentId => documentId !== id);
             await this.loadDocuments();

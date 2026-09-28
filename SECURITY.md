@@ -24,7 +24,7 @@ Report them privately to **security@scionos.ch** and include:
 
 - Runtime scripts and parsing libraries are bundled locally; the application does not load a CDN or analytics SDK.
 - `vendor/dependencies.json` records embedded library versions, upstream license identifiers, and SHA-256 hashes for bundled runtime assets.
-- Application API requests target the fixed base URL `https://sealarca.ch/v1`. The UI does not expose an endpoint override.
+- Application API requests target the fixed base URL `https://api.sealarca.ch/v1`. The UI does not expose an endpoint override.
 - The Content Security Policy permits local resources, Sealarca, and local development origins on `localhost` / `127.0.0.1`; scripts use the CSP-compatible Alpine build.
 - Markdown is parsed with Marked and sanitized by DOMPurify. Frames, embedded objects, forms, inputs and buttons are forbidden in rendered Markdown; inline style attributes are removed. `svg`/`math` nodes are stripped after sanitization and links are restricted to `http/https/mailto/tel` plus relative URLs (`ALLOWED_URI_REGEXP`) with `rel="noopener noreferrer"`.
 - The API key is stored in `sessionStorage` for the current browser tab/session, not in IndexedDB. Closing the session or using “forget key” removes it from the application session. The UI theme (`localStorage sealarca_theme`) is the only persistent preference; it contains no secret.
