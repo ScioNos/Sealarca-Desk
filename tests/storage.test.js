@@ -8,14 +8,16 @@ const { IDBFactory, IDBKeyRange } = require('fake-indexeddb');
 const root = path.join(__dirname, '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 
-test('IndexedDB v5 conserve les stores, synchronise les modes et migre les jobs v4', () => {
+test('IndexedDB v6 conserve les stores, ajoute opérations/traces et migre les jobs v4', () => {
     const db = read('js/db.js');
-    assert.match(db, /const DB_VERSION = 5/);
+    assert.match(db, /const DB_VERSION = 6/);
     assert.match(db, /createObjectStore\('folders'/);
     assert.match(db, /createObjectStore\('documents'/);
     assert.match(db, /createObjectStore\('documentChunks'/);
     assert.match(db, /createObjectStore\('documentProfiles'/);
     assert.match(db, /createObjectStore\('processingJobs'/);
+    assert.match(db, /createObjectStore\('operations'/);
+    assert.match(db, /createObjectStore\('traces'/);
     assert.match(db, /recoverInterruptedJobs\(\)/);
     assert.match(db, /recovered_after_v4/);
     assert.match(db, /leaseExpiresAt/);
@@ -35,9 +37,9 @@ function loadDb(factory) {
     return context.window.sealarcaDb;
 }
 
-function createLegacyV4(factory, seed = {}) {
+function createLegacyV4(factory, seed = {}, version = 4) {
     return new Promise((resolve, reject) => {
-        const request = factory.open('sealarca_desk_db', 4);
+        const request = factory.open('sealarca_desk_db', version);
         request.onupgradeneeded = () => {
             const db = request.result;
             const folders = db.createObjectStore('folders', { keyPath: 'id' });
@@ -96,6 +98,7 @@ test('snapshot IndexedDB round-trip keeps workspace data but excludes API key ma
     await source.setSetting('sealarca_api_key', 'legacy-secret');
 
     const snapshot = await source.exportAllData();
+    assert.equal(snapshot.version, '6.0');
     assert.equal(snapshot.messages[conversation.id][0].content, 'persisted');
     assert.equal(snapshot.settings.some(entry => entry.key === 'sealarca_api_key'), false);
     snapshot.settings.push({ key: 'sealarca_api_key', value: 'untrusted-secret' });
@@ -108,7 +111,7 @@ test('snapshot IndexedDB round-trip keeps workspace data but excludes API key ma
     assert.equal(await target.getSetting('sealarca_api_key'), null);
 });
 
-test('migration v4→v5 conserve toutes les données existantes et rend les jobs legacy reprenables', async () => {
+test('migration v4→v6 conserve toutes les données existantes et rend les jobs legacy reprenables', async () => {
     const factory = new IDBFactory();
     const stamp = Date.now();
     await createLegacyV4(factory, {
@@ -138,6 +141,74 @@ test('migration v4→v5 conserve toutes les données existantes et rend les jobs
     assert.equal(recovered.checkpoint.stage, 'recovered_after_v4');
     assert.equal(recovered.leaseOwner, null);
     assert.equal(recovered.nextRunAt <= Date.now(), true);
+});
+
+test('migration v5→v6 ajoute les stores sans réécrire les enregistrements existants', async () => {
+    const factory = new IDBFactory();
+    const stamp = Date.now();
+    await createLegacyV4(factory, {
+        folders: [{ id: 'folder_v5', name: 'Dossier v5', createdAt: stamp, updatedAt: stamp }],
+        conversations: [{ id: 'conversation_v5', folderId: 'folder_v5', title: 'Historique', createdAt: stamp, updatedAt: stamp }],
+        messages: [{ id: 'message_v5', conversationId: 'conversation_v5', role: 'assistant', content: 'Conservé', createdAt: stamp }],
+        documents: [{ id: 'document_v5', folderId: 'folder_v5', name: 'v5.txt', markdown: 'Contenu intact' }],
+        processingJobs: [{ id: 'job_v5', documentId: 'document_v5', folderId: 'folder_v5', status: 'running', leaseOwner: 'worker', leaseToken: 'live', leaseExpiresAt: Date.now() + 60000 }]
+    }, 5);
+    const db = loadDb(factory);
+    await db.init();
+    assert.equal((await db.getDocument('document_v5')).markdown, 'Contenu intact');
+    assert.equal((await db.getMessages('conversation_v5'))[0].content, 'Conservé');
+    assert.equal((await db.getProcessingJob('job_v5')).status, 'running');
+    assert.deepEqual(await db.getOperations('folder_v5'), []);
+    assert.deepEqual(await db.getTraces('folder_v5'), []);
+});
+
+test('les opérations sont exclusives entre onglets et enregistrent trace et résultat localement', async () => {
+    const factory = new IDBFactory();
+    const first = await readyDb(factory);
+    const second = loadDb(factory);
+    await second.init();
+    await first.saveFolder({ id: 'folder_operations', name: 'Opérations' });
+    const makeOperation = id => ({ id, folderId: 'folder_operations', type: 'timeline', status: 'pending', steps: [], progress: { completed: 0, total: 0 }, notices: [], updatedAt: Date.now() });
+    await first.createOperation(makeOperation('op_first'));
+    await first.createOperation(makeOperation('op_second'));
+    const claims = await Promise.all([
+        first.claimOperation('op_first', 'tab-a', 'token-a'),
+        second.claimOperation('op_second', 'tab-b', 'token-b')
+    ]);
+    assert.equal(claims.filter(Boolean).length, 1);
+    const index = claims.findIndex(Boolean);
+    const owner = index === 0 ? 'tab-a' : 'tab-b';
+    const token = index === 0 ? 'token-a' : 'token-b';
+    const claimed = claims[index];
+    const db = index === 0 ? first : second;
+    const trace = { id: 'trace_local', folderId: 'folder_operations', operationId: claimed.id, documents: [], sources: [], notices: [], context: { mode: 'local_profiles', characters: 0, documentCount: 0, sourceCount: 0 } };
+    const completed = await db.completeLocalOperation({ operationId: claimed.id, ownerId: owner, leaseToken: token, operationChanges: { status: 'completed' }, trace, resultRef: { section: 'timeline', snapshot: { timeline: [] } } });
+    assert.equal(completed.operation.status, 'completed');
+    assert.equal((await first.getTrace('trace_local')).operationId, claimed.id);
+    assert.deepEqual((await first.getOperation(claimed.id)).resultRef.snapshot.timeline, []);
+    const snapshot = await first.exportAllData();
+    assert.equal(snapshot.operations.some(operation => operation.id === claimed.id), true);
+    assert.equal(snapshot.traces.some(item => item.id === 'trace_local'), true);
+    const target = await readyDb(new IDBFactory());
+    await target.importData(snapshot);
+    assert.equal((await target.getTrace('trace_local')).folderId, 'folder_operations');
+});
+
+test('une opération peut être annulée sous le bail actif et ne peut plus être finalisée', async () => {
+    const db = await readyDb();
+    await db.saveFolder({ id: 'folder_cancel_operation', name: 'Annulation' });
+    await db.createOperation({ id: 'op_cancel', folderId: 'folder_cancel_operation', type: 'timeline', documentIds: ['doc-a'], status: 'pending', steps: [], progress: { completed: 0, total: 0 }, notices: [] });
+    const claimed = await db.claimOperation('op_cancel', 'tab-owner', 'lease-cancel');
+    assert.equal(claimed.status, 'running');
+    const cancelled = await db.updateOperationIfOwner('op_cancel', 'tab-owner', 'lease-cancel', {
+        status: 'cancelled',
+        notices: [{ code: 'operation_cancelled', severity: 'info', documentId: null, recoverable: true, metadata: {} }]
+    });
+    assert.equal(cancelled.status, 'cancelled');
+    assert.ok(cancelled.cancelledAt > 0);
+    assert.equal(cancelled.leaseToken, null);
+    assert.equal(await db.updateOperationIfOwner('op_cancel', 'tab-owner', 'lease-cancel', { status: 'completed' }), false);
+    assert.equal((await db.getOperation('op_cancel')).notices[0].code, 'operation_cancelled');
 });
 
 test('deux onglets ne dédupliquent pas en double et ne réclament pas le même job', async () => {
@@ -180,16 +251,41 @@ test('la reprise ne récupère que les baux expirés', async () => {
 test('suppression de document pendant un job empêche fiche tardive et job orphelin', async () => {
     const db = await readyDb();
     await db.saveFolder({ id: 'folder_job_delete', name: 'Jobs' });
-    const document = { id: 'doc_job_delete', folderId: 'folder_job_delete', name: 'delete.txt', markdown: 'Texte' };
+    const document = { id: 'doc_job_delete', folderId: 'folder_job_delete', name: 'delete.txt', markdown: 'Texte', sourceMap: [{ id: 'page-1', locator: { type: 'pdf-page', page: 1 } }] };
     await db.saveDocument(document);
     const job = await db.enqueueProcessingJob({ type: 'document-profile', documentId: document.id, folderId: document.folderId, inputFingerprint: 'fingerprint' });
+    await db.createOperation({ id: 'op_document_delete', folderId: document.folderId, documentIds: [document.id], type: 'summary', status: 'pending', updatedAt: Date.now() });
+    await db._request('traces', 'readwrite', store => store.put({
+        id: 'trace_document_delete', folderId: document.folderId,
+        documents: [{ id: document.id, name: document.name, included: true, sourceIds: ['page-1'] }],
+        sources: [{ documentId: document.id, documentName: document.name, sourceId: 'page-1', reference: 'delete.txt — p. 1', locator: { type: 'pdf-page', page: 1 } }]
+    }));
     const [claimed] = await db.claimRunnableProcessingJobs(Date.now(), 1, 'worker-a');
     assert.equal(claimed.id, job.id);
     await db.deleteDocument(document.id);
     assert.equal(await db.saveDocumentProfileIfJobOwner({ documentId: document.id, folderId: document.folderId, summary: 'tardive' }, job.id, 'worker-a', claimed.leaseToken), false);
     assert.equal(await db.getDocumentProfile(document.id), null);
     assert.equal(await db.getProcessingJob(job.id), null);
+    const historicalOperation = await db.getOperation('op_document_delete');
+    assert.equal(historicalOperation.status, 'cancelled');
+    assert.equal(historicalOperation.notices.at(-1).code, 'document_deleted');
+    const historicalTrace = await db.getTrace('trace_document_delete');
+    assert.equal(historicalTrace.documents[0].name, 'delete.txt');
+    assert.equal(historicalTrace.sources[0].reference, 'delete.txt — p. 1');
+    assert.equal(historicalTrace.sources[0].locator.page, 1);
     await assert.rejects(db.enqueueProcessingJob({ type: 'document-profile', documentId: document.id, inputFingerprint: 'new' }), /document associé.*n’existe plus/i);
+});
+
+test('suppression de conversation supprime aussi ses traces de provenance', async () => {
+    const db = await readyDb();
+    await db.saveConversation({ id: 'conversation_trace_delete', folderId: 'folder_default', title: 'Trace' }, { allowCreate: true });
+    await db.saveMessageWithTrace(
+        { id: 'message_trace_delete', conversationId: 'conversation_trace_delete', role: 'assistant', content: 'Résumé', createdAt: Date.now() },
+        { id: 'trace_conversation_delete', folderId: 'folder_default', conversationId: 'conversation_trace_delete', messageId: 'message_trace_delete', documents: [], sources: [], context: { documentCount: 0, sourceCount: 0, characters: 0 } }
+    );
+    assert.equal(await db.getTrace('trace_conversation_delete') !== null, true);
+    await db.deleteConversation('conversation_trace_delete');
+    assert.equal(await db.getTrace('trace_conversation_delete'), null);
 });
 
 test('suppression de dossier supprime ses enfants dans la même base sans résidus', async () => {
@@ -217,7 +313,7 @@ test('versionchange ferme et invalide la connexion IndexedDB détenue par l’in
     const db = await readyDb(factory);
     const oldConnection = db.db;
     await new Promise((resolve, reject) => {
-        const request = factory.open('sealarca_desk_db', 6);
+        const request = factory.open('sealarca_desk_db', 7);
         request.onsuccess = () => { request.result.close(); resolve(); };
         request.onerror = () => reject(request.error);
     });
@@ -296,8 +392,9 @@ test('le contexte IA sépare historique et documents sélectionnés', () => {
     assert.match(app, /selectRelevantDocuments\(folderDocuments, text/);
     assert.match(app, /getDocuments\(folderId\)/);
     assert.match(app, /contextSelection: \{/);
-    assert.match(app, /mode: this\.contextMode === 'automatic' \? 'automatic' : 'manual'/);
-    assert.match(app, /buildDocumentContext\(selectedDocuments, text, this\.contextMode\)/);
+    assert.match(app, /const contextMode = this\.effectiveContextMode/);
+    assert.match(app, /mode: contextMode === 'automatic' \? 'automatic' : 'manual'/);
+    assert.match(app, /buildDocumentContext\(selectedDocuments, text, contextMode\)/);
     assert.match(app, /documentRefs/);
     assert.doesNotMatch(app, /m\.fullPayload \|\| m\.content/);
     assert.doesNotMatch(app, /formattedPromptText/);
@@ -335,7 +432,7 @@ test('l’interface P1 expose vue dossier, recherche, queue et modes de contexte
     assert.match(html, /x-text="documentsQueueTitle"/);
     assert.match(html, /x-text="documentsAutomaticMode"/);
     assert.match(html, /x-text="documentsGenerateMissing"/);
-    assert.match(html, /js\/p1\.js\?v=1\.1\.0/);
+    assert.match(html, /js\/p1\.js\?v=1\.2\.0/);
 });
 
 test('le projet est source available sous PolyForm Perimeter 1.0.1', () => {
@@ -353,28 +450,29 @@ test('le projet est source available sous PolyForm Perimeter 1.0.1', () => {
 });
 
 
-test('la release cumulative utilise la version 1.1.0 et conserve les versions précédentes', () => {
+test('la release cumulative utilise la version 1.2.0 et conserve les versions précédentes', () => {
     const pkg = JSON.parse(read('package.json'));
     const changelog = read('CHANGELOG.md');
     const notes = read('RELEASE_NOTES.md');
     const html = read('index.html');
     const buildScript = read('scripts/build-release.ps1');
-    const forbiddenDevelopmentVersion = ['1', '1', '0-dev'].join('.');
+    const forbiddenDevelopmentVersion = ['1', '2', '0-dev'].join('.');
 
-    assert.equal(pkg.version, '1.1.0');
+    assert.equal(pkg.version, '1.2.0');
     assert.ok(changelog.includes('## [1.0.0] - 2026-08-29')); 
     assert.ok(changelog.includes('## [1.0.1] - 2026-08-31'));
     assert.ok(changelog.includes('## [1.0.3] - 2026-09-05'));
     assert.ok(changelog.includes('## [1.0.2] - 2026-08-31'));
     assert.ok(changelog.includes('## [1.0.4] - 2026-09-19'));
     assert.ok(changelog.includes('## [1.1.0] - 2026-09-28'));
+    assert.ok(changelog.includes('## [1.2.0] - 2026-09-29'));
     assert.match(changelog, /First Official Release/i);
     assert.doesNotMatch(changelog, /changed from MIT/i);
-    assert.ok(notes.startsWith('# Sealarca Desk v1.1.0'));
-    assert.match(notes, /IndexedDB from v4 to v5/i);
-    assert.ok(notes.includes('Sealarca-Desk-v1.1.0.zip'));
-    assert.ok(buildScript.includes("[string]$Version = '1.1.0'"));
-    assert.ok(html.includes('js/app.js?v=1.1.0'));
+    assert.ok(notes.startsWith('# Sealarca Desk v1.2.0'));
+    assert.match(notes, /IndexedDB from v5 to v6/i);
+    assert.ok(notes.includes('Sealarca-Desk-v1.2.0.zip'));
+    assert.ok(buildScript.includes("[string]$Version = '1.2.0'"));
+    assert.ok(html.includes('js/app.js?v=1.2.0'));
 
     for (const contents of [changelog, notes, html, buildScript, JSON.stringify(pkg)]) {
         assert.equal(contents.includes(forbiddenDevelopmentVersion), false);

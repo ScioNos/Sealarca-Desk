@@ -5,8 +5,8 @@
 (function (global) {
     'use strict';
 
-    const PROFILE_SCHEMA_VERSION = 1;
-    const PROFILE_PROMPT_VERSION = 'document-profile-v1';
+    const PROFILE_SCHEMA_VERSION = 2;
+    const PROFILE_PROMPT_VERSION = 'document-profile-v2';
     const DEFAULT_MAX_PROFILE_CHARS = 120000;
     const STOP_WORDS = new Set(['alors','avec','avoir','cette','comme','dans','des','elle','elles','entre','est','etait','etre','fait','font','ils','leur','leurs','mais','nous','pour','plus','sans','ses','sont','sur','tout','tous','une','vous','the','and','for','from','that','this','with','und','der','die','das','ein','eine','con','del','los','las','che','per','una']);
 
@@ -194,7 +194,7 @@
         const sources = sourceMap.map(source => ({ id: source.id, reference: sourceReference(document, source) }));
         const prompt = [
             'Analyse le document Markdown ci-dessous et retourne uniquement un objet JSON valide.',
-            'Schéma: {"documentType":"", "summary":"", "people":[], "organizations":[], "importantDates":[{"date":"", "label":"", "sourceIds":[]}], "importantItems":[{"label":"", "details":"", "sourceIds":[]}], "sourceIds":[]}.',
+            'Schéma: {"documentType":"", "summary":"", "people":[{"name":"", "sourceIds":[]}], "organizations":[{"name":"", "sourceIds":[]}], "importantDates":[{"date":"", "label":"", "sourceIds":[]}], "importantAmounts":[{"amount":"", "label":"", "sourceIds":[]}], "events":[{"date":"", "label":"", "details":"", "category":"", "sourceIds":[]}], "obligations":[{"label":"", "details":"", "deadline":"", "sourceIds":[]}], "importantItems":[{"label":"", "details":"", "sourceIds":[]}], "sourceIds":[]}.',
             'La fiche doit rester générique, factuelle et concise. N’invente aucune personne, organisation, date, information ou provenance.',
             'Pour sourceIds, utilise exclusivement les identifiants de la liste SOURCE_MAP. Omettre toute référence non démontrable.',
             'Nom: ' + ((document && document.name) || ''),
@@ -233,11 +233,27 @@
                 sourceIds,
                 references: sourceIds.map(id => ({ sourceId: id, label: sourceReference(document, allowed.get(id)) }))
             };
-            if (kind === 'date') normalized.date = String(object.date || (typeof item === 'string' ? item : '')).trim();
-            if (kind === 'item') normalized.details = String(object.details || object.description || '').trim();
+            if (kind === 'date' || kind === 'event') normalized.date = String(object.date || (typeof item === 'string' ? item : '')).trim();
+            if (['item', 'event', 'obligation'].includes(kind)) normalized.details = String(object.details || object.description || '').trim();
+            if (kind === 'event') normalized.category = String(object.category || object.type || '').trim();
+            if (kind === 'obligation') normalized.deadline = String(object.deadline || object.date || '').trim();
+            if (kind === 'amount') normalized.amount = String(object.amount || object.value || object.label || '').trim();
             return normalized;
-        }).filter(item => item.label || item.date || item.details);
+        }).filter(item => item.label || item.date || item.details || item.amount || item.deadline);
+        const normalizeNamedEntities = (value, kind) => (Array.isArray(value) ? value : []).slice(0, 50).map(item => {
+            const object = typeof item === 'string' ? { name: item } : (item || {});
+            const name = String(object.name || object.label || '').trim();
+            const sourceIds = normalizeSourceIds(object.sourceIds || object.sources || []);
+            return {
+                kind,
+                name,
+                sourceIds,
+                references: sourceIds.map(id => ({ sourceId: id, label: sourceReference(document, allowed.get(id)) }))
+            };
+        }).filter(item => item.name);
         const sourceIds = normalizeSourceIds(raw.sourceIds || raw.sources || []);
+        const people = uniqueStrings(raw.people || raw.persons || raw.personnes);
+        const organizations = uniqueStrings(raw.organizations || raw.organisations);
         return {
             documentId: document.id,
             folderId: document.folderId,
@@ -246,9 +262,13 @@
             status: 'valid',
             documentType: String(raw.documentType || raw.type || document.extension || 'document').trim(),
             summary: String(raw.summary || raw.resume || '').trim(),
-            people: uniqueStrings(raw.people || raw.persons || raw.personnes),
-            organizations: uniqueStrings(raw.organizations || raw.organisations),
+            people,
+            organizations,
+            entities: [...normalizeNamedEntities(raw.people || raw.persons || raw.personnes, 'person'), ...normalizeNamedEntities(raw.organizations || raw.organisations, 'organization')],
             importantDates: normalizeItems(raw.importantDates || raw.dates, 'date'),
+            importantAmounts: normalizeItems(raw.importantAmounts || raw.amounts || raw.montants, 'amount'),
+            events: normalizeItems(raw.events || raw.eventsTimeline || raw.evenements, 'event'),
+            obligations: normalizeItems(raw.obligations || raw.commitments, 'obligation'),
             importantItems: normalizeItems(raw.importantItems || raw.items || raw.elements, 'item'),
             sourceIds,
             references: sourceIds.map(id => ({ sourceId: id, label: sourceReference(document, allowed.get(id)) })),

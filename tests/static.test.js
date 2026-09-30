@@ -105,12 +105,17 @@ test('les nouvelles chaînes de configuration et d’espace documentaire existen
     const required = {
         app: ['modelHint', 'roleHint'],
         settings: ['getKey', 'openKeys', 'prerequisitesTitle', 'stepOne', 'stepTwo', 'chooseModel', 'modelRequired', 'modelsHint', 'closeBtn', 'networkError'],
-        documents: ['workspaceSubtitle', 'manualMode', 'automaticMode', 'automaticHint', 'overviewTab', 'queueAction', 'statusPending', 'statusCancelled']
+        documents: ['workspaceSubtitle', 'manualMode', 'automaticMode', 'automaticHint', 'overviewTab', 'queueAction', 'statusPending', 'statusCancelled', 'pagesUnit', 'lastProfileDate'],
+        dossier: ['actionsTitle', 'timelineTitle', 'timelineTab', 'timelineEmpty', 'operationsTitle', 'operationsEmpty', 'localActionHelp', 'profileCoverage', 'traceSummary', 'extractionUnverified']
     };
     for (const language of ['fr', 'de', 'it', 'en', 'es']) {
         for (const group of Object.keys(required)) {
             for (const key of required[group]) assert.equal(typeof context.window.SEALARCA_I18N[language][group][key], 'string', `${language}.${group}.${key}`);
         }
+        for (const key of ['summary', 'timeline', 'entities', 'obligations', 'compare', 'divergences', 'amounts']) assert.equal(typeof context.window.SEALARCA_I18N[language].dossier.actions[key], 'string', `${language}.dossier.actions.${key}`);
+        for (const key of ['pending', 'running', 'completed', 'partial', 'failed', 'cancelled', 'ready', 'not_analyzed']) assert.equal(typeof context.window.SEALARCA_I18N[language].dossier.status[key], 'string', `${language}.dossier.status.${key}`);
+        assert.equal(typeof context.window.SEALARCA_I18N[language].dossier.notices.document_deleted, 'string', `${language}.dossier.notices.document_deleted`);
+        for (const key of ['documents', 'profiles', 'results']) assert.equal(typeof context.window.SEALARCA_I18N[language].dossier.stepDetails[key], 'string', `${language}.dossier.stepDetails.${key}`);
         const prerequisites = context.window.SEALARCA_I18N[language].settings.prerequisites;
         assert.equal(Array.isArray(prerequisites), true, `${language}.settings.prerequisites`);
         assert.equal(prerequisites.length, 3, `${language}.settings.prerequisites length`);
@@ -122,6 +127,33 @@ test('les nouvelles chaînes de configuration et d’espace documentaire existen
     assert.match(html, /settingsStepTwo/);
     assert.match(app, /commencer#desk/);
     assert.match(app, /hasVerifiedApiKey/);
+    assert.match(html, /doc\.pageLabel/);
+    assert.match(html, /doc\.profileAnalysisDateLabel/);
+});
+
+test('l’expérience de dossier consolide les fiches localement et garde des traces sourcées sans infrastructure fork', () => {
+    const html = read('index.html');
+    const app = read('js/app.js');
+    const operations = read('js/operations.js');
+    const timeline = read('js/timeline.js');
+    const localAction = app.slice(app.indexOf('async runFolderAnalysis'), app.indexOf('async cancelFolderOperation'));
+    assert.ok(fs.existsSync(path.join(root, 'css', 'document-experience.css')));
+    assert.match(html, /css\/document-experience\.css/);
+    assert.match(html, /js\/operations\.js\?v=1\.2\.0/);
+    assert.match(html, /js\/timeline\.js\?v=1\.2\.0/);
+    assert.ok(html.indexOf('js/operations.js') < html.indexOf('js/app.js'));
+    assert.match(html, /id="timeline-panel"/);
+    assert.match(html, /status-chip/);
+    assert.match(html, /step\.detailLabel/);
+    assert.match(operations, /function createTrace/);
+    assert.match(operations, /sourceIds/);
+    assert.match(timeline, /function buildDossierSummary/);
+    assert.match(localAction, /buildDossierSummary/);
+    assert.match(timeline, /apparent_difference/);
+    assert.doesNotMatch(localAction, /completeResponse|streamResponse|sealarcaApi/);
+    assert.doesNotMatch(operations + timeline, /\bmcp\b|researchStream|OpenCaseLaw/i);
+    assert.doesNotMatch(html, /mcp-plan|mcp-drawer/);
+    assert.doesNotMatch(html, /x-text="t\(/);
 });
 
 test('le premier écran explique le modèle et le rôle sans promesse géographique', () => {

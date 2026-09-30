@@ -55,7 +55,12 @@ document.addEventListener('alpine:init', () => {
         documentSearchQuery: '',
         documentSearchResults: [],
         contextMode: 'manual',
-        folderOverview: { documentCount: 0, pageCount: 0, profileCount: 0, people: [], organizations: [], dates: [], items: [] },
+        folderOverview: { documentCount: 0, pageCount: 0, profileCount: 0, people: [], organizations: [], dates: [], items: [], timeline: [], entities: { people: [], organizations: [], amounts: [], obligations: [], documents: [], sources: [] } },
+        folderOperations: [],
+        isFolderOptionsOpen: false,
+        isStartingFolderOperation: false,
+        operationOwnerId: `tab_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`,
+        operationRuns: new Map(),
         p1Queue: null,
         inputPrompt: '',
         isStreaming: false,
@@ -118,7 +123,26 @@ document.addEventListener('alpine:init', () => {
         get documentPreviewWarnings() { return this.extractionWarnings(this.previewDocument); },
         get documentPreviewTitle() { return this.previewDocument ? this.previewDocument.name : this.t('documents.preview'); },
         get documentPreviewSize() { return this.previewDocument ? this.formatBytes(this.previewDocument.size) : ''; },
-        get previewHasProfile() { return Boolean(this.previewDocument?.profile?.status === 'valid'); },
+        get previewHasProfile() {
+            const profile = this.previewDocument?.profile;
+            return Boolean(profile?.status === 'valid' && profile.inputFingerprint === window.SealarcaP1.fingerprintDocument(this.previewDocument));
+        },
+        get previewHasProfileFacts() { return this.previewProfileFacts.length > 0; },
+        get previewProfileFacts() {
+            const app = this;
+            const profile = this.previewDocument?.profile || {};
+            const documentId = this.previewDocument?.id;
+            const entries = [
+                ...(profile.importantAmounts || []).map(item => ({ ...item, kind: 'amount', value: item.amount || item.label })),
+                ...(profile.obligations || []).map(item => ({ ...item, kind: 'obligation', value: item.label || item.details, detail: item.deadline || item.details }))
+            ];
+            return entries.map((item, index) => ({
+                ...item,
+                id: item.kind + '_' + index,
+                reference: item.references?.[0]?.label || '',
+                open() { app.openProfileReference(documentId, item.references?.[0]?.sourceId || null); }
+            }));
+        },
         get previewProfile() { return this.previewDocument?.profile || { people: [], organizations: [], importantDates: [], importantItems: [] }; },
         get emptyTitle() { return this.t('empty.title'); },
         get emptyDesc() { return this.t('empty.desc'); },
@@ -196,6 +220,7 @@ document.addEventListener('alpine:init', () => {
         get hasToast() { return Boolean(this.toastMessage); },
         get streamingMarkdown() { return this.renderMarkdown(this.currentStreamingMessage || '...'); },
         get isOverviewTab() { return this.documentPanelTab === 'overview'; },
+        get isTimelineTab() { return this.documentPanelTab === 'timeline'; },
         get isLibraryTab() { return this.documentPanelTab === 'library'; },
         get isSearchTab() { return this.documentPanelTab === 'search'; },
         get isJobsTab() { return this.documentPanelTab === 'jobs'; },
@@ -203,6 +228,7 @@ document.addEventListener('alpine:init', () => {
         get libraryTabClass() { return this.isLibraryTab ? 'active' : ''; },
         get searchTabClass() { return this.isSearchTab ? 'active' : ''; },
         get jobsTabClass() { return this.isJobsTab ? 'active' : ''; },
+        get timelineTabClass() { return this.isTimelineTab ? 'active' : ''; },
         get manualContextClass() { return this.isManualContext ? 'active' : ''; },
         get automaticContextClass() { return this.isAutomaticContext ? 'active' : ''; },
         get hasAnyModal() { return this.isSettingsOpen || this.isRolesOpen || this.isDocumentsOpen || this.isDocumentPreviewOpen; },
@@ -210,14 +236,60 @@ document.addEventListener('alpine:init', () => {
         get hasNoDocumentSearchResults() { return Boolean(this.documentSearchQuery.trim()) && this.documentSearchResults.length === 0; },
         get hasProcessingJobs() { return this.processingJobs.length > 0; },
         get hasNoProcessingJobs() { return this.processingJobs.length === 0; },
+        get hasFolderOperations() { return this.folderOperations.length > 0; },
+        get hasNoFolderOperations() { return this.folderOperations.length === 0; },
+        get hasTimelineEvents() { return this.folderOverview.timeline.length > 0; },
+        get hasDossierAmounts() { return this.folderOverview.entities.amounts.length > 0; },
+        get hasDossierObligations() { return this.folderOverview.entities.obligations.length > 0; },
+        get dossierParties() { return this.folderOverview.entities.people.concat(this.folderOverview.entities.organizations); },
+        get runningFolderOperation() { return this.folderOperations.find(operation => operation.status === 'running') || null; },
+        get canCancelFolderOperation() { return Boolean(this.runningFolderOperation && this.operationRuns.has(this.runningFolderOperation.id)); },
+        get folderActionsDisabled() { return !this.documents.length || this.isStartingFolderOperation || Boolean(this.runningFolderOperation); },
+        get visibleFolderOperations() { return this.folderOperations.slice(0, 6); },
+        get folderContextModeOverride() { return this.activeFolder?.documentSettings?.contextMode || ''; },
         get hasNoOverviewEntities() { return this.folderOverview.people.length === 0 && this.folderOverview.organizations.length === 0; },
-        get isManualContext() { return this.contextMode === 'manual'; },
-        get isAutomaticContext() { return this.contextMode === 'automatic'; },
-        get folderOverviewPagesLabel() { return this.folderOverview.pageCount > 0 ? this.folderOverview.pageCount + ' pages' : this.t('documents.pagesUnavailable'); },
+        get effectiveContextMode() {
+            const override = this.activeFolder?.documentSettings?.contextMode;
+            return ['manual', 'automatic'].includes(override) ? override : this.contextMode;
+        },
+        get isManualContext() { return this.effectiveContextMode === 'manual'; },
+        get isAutomaticContext() { return this.effectiveContextMode === 'automatic'; },
+        get folderOverviewPagesLabel() { return this.folderOverview.pageCount > 0 ? this.folderOverview.pageCount + ' ' + this.t('documents.pagesUnit') : this.t('documents.pagesUnavailable'); },
         get folderOverviewProfilesLabel() { return this.folderOverview.profileCount + ' / ' + this.folderOverview.documentCount; },
 
         get documentsWorkspaceKicker() { return this.t('documents.workspaceKicker'); },
         get documentsWorkspaceSubtitle() { return this.t('documents.workspaceSubtitle'); },
+        get dossierActionsTitle() { return this.t('dossier.actionsTitle'); },
+        get dossierTimelineTitle() { return this.t('dossier.timelineTitle'); },
+        get dossierTimelineEmpty() { return this.t('dossier.timelineEmpty'); },
+        get dossierOperationTitle() { return this.t('dossier.operationsTitle'); },
+        get dossierOperationsEmpty() { return this.t('dossier.operationsEmpty'); },
+        get dossierAdvancedOptions() { return this.t('dossier.advancedOptions'); },
+        get dossierFolderContextSetting() { return this.t('dossier.folderContextSetting'); },
+        get dossierInheritContextSetting() { return this.t('dossier.inheritContextSetting'); },
+        get dossierManualContextSetting() { return this.t('dossier.manualContextSetting'); },
+        get dossierAutomaticContextSetting() { return this.t('dossier.automaticContextSetting'); },
+        get dossierProfileCoverageLabel() {
+            return this.t('dossier.profileCoverage').replaceAll('{ready}', String(this.folderOverview.profileCount)).replaceAll('{total}', String(this.folderOverview.documentCount));
+        },
+        get dossierLocalActionHelp() { return this.t('dossier.localActionHelp'); },
+        get dossierCancelOperation() { return this.t('dossier.cancelOperation'); },
+        get dossierRetryOperation() { return this.t('dossier.retryOperation'); },
+        get dossierOpenResult() { return this.t('dossier.openResult'); },
+        get dossierSummaryAction() { return this.t('dossier.actions.summary'); },
+        get dossierTimelineAction() { return this.t('dossier.actions.timeline'); },
+        get dossierEntitiesAction() { return this.t('dossier.actions.entities'); },
+        get dossierObligationsAction() { return this.t('dossier.actions.obligations'); },
+        get dossierCompareAction() { return this.t('dossier.actions.compare'); },
+        get dossierDivergencesAction() { return this.t('dossier.actions.divergences'); },
+        get dossierAmountsAction() { return this.t('dossier.actions.amounts'); },
+        get dossierTimelineTabLabel() { return this.t('dossier.timelineTab'); },
+        get dossierEntitiesTitle() { return this.t('dossier.entitiesTitle'); },
+        get dossierAmountsTitle() { return this.t('dossier.amountsTitle'); },
+        get dossierObligationsTitle() { return this.t('dossier.obligationsTitle'); },
+        get dossierAmountsEmpty() { return this.t('dossier.amountsEmpty'); },
+        get dossierObligationsEmpty() { return this.t('dossier.obligationsEmpty'); },
+        get dossierExtractionUnverified() { return this.t('dossier.extractionUnverified'); },
         get documentsOverviewTab() { return this.t('documents.overviewTab'); },
         get documentsLibraryTab() { return this.t('documents.libraryTab'); },
         get documentsSearchTab() { return this.t('documents.searchTab'); },
@@ -301,12 +373,13 @@ document.addEventListener('alpine:init', () => {
         closeRoles() { return this.closeModal('isRolesOpen', 'roles'); },
         openDocuments() { this.openModal('isDocumentsOpen', 'documents', '#overview-tab'); this.openOverviewTab(); this.refreshFolderWorkspace(); },
         openOverviewTab() { this.documentPanelTab = 'overview'; this.refreshFolderWorkspace(); },
+        openTimelineTab() { this.documentPanelTab = 'timeline'; this.refreshFolderWorkspace(); },
         openLibraryTab() { this.documentPanelTab = 'library'; },
         openSearchTab() { this.documentPanelTab = 'search'; },
         openJobsTab() { this.documentPanelTab = 'jobs'; this.loadProcessingJobs(); },
         handleWorkspaceTabsKeydown(event) {
             if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft' && event.key !== 'Home' && event.key !== 'End') return;
-            const order = ['overview', 'library', 'search', 'jobs'];
+            const order = ['overview', 'timeline', 'library', 'search', 'jobs'];
             let index = order.indexOf(this.documentPanelTab);
             if (event.key === 'ArrowRight') index = (index + 1) % order.length;
             else if (event.key === 'ArrowLeft') index = (index - 1 + order.length) % order.length;
@@ -315,13 +388,37 @@ document.addEventListener('alpine:init', () => {
             event.preventDefault();
             const tab = order[index];
             if (tab === 'overview') this.openOverviewTab();
+            else if (tab === 'timeline') this.openTimelineTab();
             else if (tab === 'library') this.openLibraryTab();
             else if (tab === 'search') this.openSearchTab();
             else if (tab === 'jobs') this.openJobsTab();
             this.$nextTick(() => document.getElementById(`${tab}-tab`)?.focus());
         },
-        useManualContext() { this.contextMode = 'manual'; },
-        useAutomaticContext() { this.contextMode = 'automatic'; },
+        useManualContext() { return this.setContextMode('manual'); },
+        useAutomaticContext() { return this.setContextMode('automatic'); },
+        async setContextMode(mode) {
+            if (!['manual', 'automatic'].includes(mode)) return;
+            const folder = this.activeFolderId ? await window.sealarcaDb.getFolder(this.activeFolderId) : null;
+            if (['manual', 'automatic'].includes(folder?.documentSettings?.contextMode)) {
+                await this.saveActiveFolderSettings({ contextMode: mode });
+                return;
+            }
+            this.contextMode = mode;
+            await window.sealarcaDb.setSetting('sealarca_context_mode', mode);
+        },
+        async setFolderContextModeOverride(event) {
+            const value = event.currentTarget.value;
+            await this.saveActiveFolderSettings({ contextMode: ['manual', 'automatic'].includes(value) ? value : null });
+        },
+        async saveActiveFolderSettings(changes) {
+            const folder = this.activeFolderId ? await window.sealarcaDb.getFolder(this.activeFolderId) : null;
+            if (!folder) return;
+            await window.sealarcaDb.saveFolder({
+                ...folder,
+                documentSettings: { ...(folder.documentSettings || {}), ...changes }
+            });
+            await this.loadFolders();
+        },
         closeDocuments() { return this.closeModal('isDocumentsOpen', 'documents'); },
         closeDocumentPreview() { const closed = this.closeModal('isDocumentPreviewOpen', 'preview'); if (closed) this.previewDocument = null; return closed; },
         closeOverlays() {
@@ -423,6 +520,7 @@ document.addEventListener('alpine:init', () => {
             const legacyKey = String((await window.sealarcaDb.getSetting('sealarca_api_key', '')) || '').trim();
             const savedModel = await window.sealarcaDb.getSetting('sealarca_model', '');
             const savedRole = await window.sealarcaDb.getSetting('sealarca_active_role', null);
+            const savedContextMode = await window.sealarcaDb.getSetting('sealarca_context_mode', 'manual');
 
             this.apiKey = savedKey || legacyKey;
             if (!savedKey && legacyKey) {
@@ -432,6 +530,7 @@ document.addEventListener('alpine:init', () => {
                 await window.sealarcaDb.deleteSetting('sealarca_api_key');
             }
             this.selectedModel = savedModel;
+            this.contextMode = ['manual', 'automatic'].includes(savedContextMode) ? savedContextMode : 'manual';
             this.isDarkMode = document.documentElement.classList.contains('dark');
             this.selectedRole = savedRole;
             this.applyTheme();
@@ -461,6 +560,8 @@ document.addEventListener('alpine:init', () => {
             // 7. Charger la dernière conversation du dossier actif si existante
             if (this.conversations.length > 0) await this.selectConversation(this.conversations[0].id);
             await this.initializeP1Queue();
+            await window.sealarcaDb.recoverStaleOperations();
+            await this.loadFolderOperations();
         },
 
         // --- Changement de langue ---
@@ -745,8 +846,17 @@ document.addEventListener('alpine:init', () => {
                     get selectionMark() { return decorated.isSelected ? '✓' : '+'; },
                     get warningText() { return app.extractionWarnings(document).join(' · '); },
                     get sizeLabel() { return app.formatBytes(document.size); },
-                    get pageLabel() { const pages = Number(document.metadata?.pageCount || 0); return pages ? pages + ' pages' : ''; },
-                    get profileStatusLabel() { return app.t(decorated.profile?.status === 'valid' ? 'documents.profileAvailable' : 'documents.profileToGenerate'); },
+                    get pageLabel() { const pages = Number(document.metadata?.pageCount || 0); return pages ? pages + ' ' + app.t('documents.pagesUnit') : ''; },
+                    get profileAnalysisDateLabel() {
+                        const timestamp = Number(decorated.profile?.generatedAt || decorated.profile?.updatedAt || 0);
+                        if (!Number.isFinite(timestamp) || timestamp <= 0) return '';
+                        const date = new Intl.DateTimeFormat(app.currentLang, { dateStyle: 'medium' }).format(new Date(timestamp));
+                        return app.t('documents.lastProfileDate').replaceAll('{date}', date);
+                    },
+                    get profileStatusLabel() { return app.t(decorated.profile?.status === 'valid' && decorated.profile.inputFingerprint === window.SealarcaP1.fingerprintDocument(document) ? 'documents.profileAvailable' : 'documents.profileToGenerate'); },
+                    get analysisStatus() { return app.documentAnalysisStatus(document, decorated.profile); },
+                    get analysisStatusLabel() { return app.t('dossier.status.' + decorated.analysisStatus); },
+                    get analysisStatusClass() { return 'status-' + decorated.analysisStatus; },
                     toggle() { app.toggleDocumentSelection(document.id); },
                     preview() { app.openDocumentPreview(document.id); },
                     download() { app.downloadDocument(document.id); },
@@ -777,6 +887,7 @@ document.addEventListener('alpine:init', () => {
 
         async deleteDocument(id) {
             if (!window.confirm(this.t('documents.deleteConfirm'))) return;
+            if (this.runningFolderOperation?.documentIds?.includes(id)) await this.cancelFolderOperation(this.runningFolderOperation.id);
             try { this.p1Queue?.abortJobsForDocument?.(id, 'document_deleted'); } catch (_) { /* annulation best-effort */ }
             await window.sealarcaDb.deleteDocument(id);
             this.selectedDocumentIds = this.selectedDocumentIds.filter(documentId => documentId !== id);
@@ -832,33 +943,92 @@ document.addEventListener('alpine:init', () => {
             if (stream) await stream;
         },
 
-        buildDocumentContext(documents, query = '', mode = this.contextMode) {
-            if (!documents.length) return { text: '', citationDocuments: [] };
+        buildDocumentContext(documents, query = '', mode = this.effectiveContextMode, options = {}) {
+            const selectedDocuments = Array.isArray(documents) ? documents : [];
+            if (!selectedDocuments.length) return { text: '', citationDocuments: [], notices: [], manifest: { mode, characters: 0, documents: [], sources: [] } };
             const citationDocuments = [];
-            const sections = documents.map(document => {
+            const sections = [];
+            const manifestDocuments = [];
+            const manifestSources = [];
+            const notices = [];
+            const maxCharacters = Number.isFinite(Number(options.maxCharacters)) ? Math.max(1000, Number(options.maxCharacters)) : Infinity;
+            const sectionBudget = Number.isFinite(maxCharacters) ? Math.max(0, maxCharacters - 500) : Infinity;
+            const maxSourcesPerDocument = Math.max(1, Number(options.maxSourcesPerDocument) || 8);
+            let usedCharacters = 0;
+
+            for (const document of selectedDocuments) {
                 const sourceMap = Array.isArray(document.sourceMap) ? document.sourceMap : [];
                 const excerpts = mode === 'automatic'
-                    ? window.SealarcaP1.citableExcerpts(document, query, { limit: 8 })
+                    ? window.SealarcaP1.citableExcerpts(document, query, { limit: maxSourcesPerDocument })
                     : sourceMap.map(source => ({
+                        sourceId: source.id,
                         reference: window.SealarcaP1.sourceReference(document, source),
-                        excerpt: String(document.markdown || '').slice(Number(source.markdownStart || 0), Number(source.markdownEnd || 0)).trim()
+                        excerpt: String(document.markdown || '').slice(Number(source.markdownStart || 0), Number(source.markdownEnd || 0)).trim(),
+                        source
                     })).filter(item => item.excerpt);
-                if (!excerpts.length) {
-                    citationDocuments.push({ ...document, sourceMap: [] });
-                    return ['## Document sélectionné : ' + document.name, 'Type: ' + (document.mimeType || document.extension || 'inconnu'), '', String(document.markdown || '')].join('\n');
-                }
+                const header = ['## Document sélectionné : ' + document.name, 'Type: ' + (document.mimeType || document.extension || 'inconnu')].join('\n');
+                const sourceEntries = [];
                 const sentSourceMap = [];
-                for (const excerpt of excerpts) {
-                    const source = sourceMap.find(item => item.id && item.id === excerpt.sourceId)
-                        || sourceMap.find(item => window.SealarcaP1.sourceReference(document, item) === excerpt.reference);
-                    if (source && !sentSourceMap.some(item => item.id === source.id)) sentSourceMap.push(source);
+                let body = '';
+                if (!excerpts.length) {
+                    body = String(document.markdown || '');
+                    if (body && usedCharacters + header.length + body.length <= sectionBudget) {
+                        usedCharacters += header.length + body.length + 4;
+                    } else {
+                        body = '';
+                        notices.push(window.SealarcaOperations.createNotice('document_not_in_context', 'partial', { documentId: document.id, metadata: { reason: 'context_limit_or_empty' } }));
+                    }
+                } else {
+                    for (const excerpt of excerpts) {
+                        const excerptText = String(excerpt.excerpt || '').trim();
+                        if (!excerptText) continue;
+                        const source = excerpt.source || sourceMap.find(item => item.id && item.id === excerpt.sourceId)
+                            || sourceMap.find(item => window.SealarcaP1.sourceReference(document, item) === excerpt.reference);
+                        const reference = String(excerpt.reference || (source && window.SealarcaP1.sourceReference(document, source)) || document.name);
+                        const block = '### SOURCE: ' + reference + '\n' + excerptText;
+                        const nextSection = [header, ...sourceEntries.map(item => item.block), block].join('\n\n');
+                        if (usedCharacters + nextSection.length + 4 > sectionBudget) {
+                            notices.push(window.SealarcaOperations.createNotice('context_limit_reached', 'partial', { documentId: document.id, metadata: { limit: maxCharacters } }));
+                            continue;
+                        }
+                        sourceEntries.push({ block, source, reference, characterCount: excerptText.length });
+                        if (source?.id && !sentSourceMap.some(item => item.id === source.id)) sentSourceMap.push(source);
+                    }
+                    if (sourceEntries.length) usedCharacters += [header, ...sourceEntries.map(item => item.block)].join('\n\n').length + 4;
                 }
+                const section = body ? [header, body].join('\n\n') : sourceEntries.length ? [header, ...sourceEntries.map(item => item.block)].join('\n\n') : '';
+                const included = Boolean(section);
+                if (included) sections.push(section);
                 citationDocuments.push({ ...document, sourceMap: sentSourceMap });
-                return ['## Document sélectionné : ' + document.name, 'Type: ' + (document.mimeType || document.extension || 'inconnu'), '', ...excerpts.map(item => '### SOURCE: ' + item.reference + '\n' + item.excerpt)].join('\n\n');
-            });
+                const sourceIds = sourceEntries.map(item => item.source?.id).filter(Boolean);
+                const characterCount = body.length || sourceEntries.reduce((sum, item) => sum + item.characterCount, 0);
+                manifestDocuments.push({
+                    id: document.id,
+                    name: document.name,
+                    hash: document.hash || null,
+                    pageCount: Number(document.metadata?.pageCount) || null,
+                    included,
+                    characterCount,
+                    sourceIds
+                });
+                for (const item of sourceEntries) manifestSources.push({
+                    documentId: document.id,
+                    documentName: document.name,
+                    sourceId: item.source?.id || null,
+                    reference: item.reference,
+                    locator: item.source?.locator || null,
+                    characterCount: item.characterCount
+                });
+            }
+
+            const text = sections.length
+                ? '\n\n# CONTEXTE DOCUMENTAIRE SÉLECTIONNÉ\n\n' + sections.join('\n\n---\n\n') + '\n\nRègle de citation: cite exactement les libellés SOURCE fournis. N’invente jamais une page, slide, feuille ou ligne absente.\n\n# FIN DU CONTEXTE DOCUMENTAIRE\n'
+                : '';
             return {
-                text: '\n\n# CONTEXTE DOCUMENTAIRE SÉLECTIONNÉ\n\n' + sections.join('\n\n---\n\n') + '\n\nRègle de citation: cite exactement les libellés SOURCE fournis. N’invente jamais une page, slide, feuille ou ligne absente.\n\n# FIN DU CONTEXTE DOCUMENTAIRE\n',
-                citationDocuments
+                text,
+                citationDocuments,
+                notices,
+                manifest: { mode, characters: text.length, documents: manifestDocuments, sources: manifestSources }
             };
         },
 
@@ -899,14 +1069,17 @@ document.addEventListener('alpine:init', () => {
 
         async refreshFolderWorkspace() {
             if (!this.activeFolderId) return;
-            await Promise.all([this.loadDocuments(), this.loadDocumentProfiles(), this.loadProcessingJobs()]);
+            await Promise.all([this.loadDocuments(), this.loadDocumentProfiles(), this.loadProcessingJobs(), this.loadFolderOperations()]);
             this.buildFolderOverview();
             if (this.documentSearchQuery.trim()) this.runDocumentSearch();
         },
 
         buildFolderOverview() {
             const profileByDocument = new Map(this.documentProfiles.map(profile => [profile.documentId, profile]));
-            const validProfiles = this.documents.map(document => profileByDocument.get(document.id)).filter(profile => profile?.status === 'valid');
+            const validProfiles = this.documents.map(document => {
+                const profile = profileByDocument.get(document.id);
+                return profile?.status === 'valid' && profile.inputFingerprint === window.SealarcaP1.fingerprintDocument(document) ? profile : null;
+            }).filter(Boolean);
             const unique = values => [...new Set(values.filter(Boolean).map(value => String(value).trim()))].slice(0, 100);
             const dates = [];
             const items = [];
@@ -915,6 +1088,15 @@ document.addEventListener('alpine:init', () => {
                 for (const item of profile.importantDates || []) dates.push({ ...item, id: profile.documentId + '_' + (item.date || item.label), documentId: profile.documentId, documentName: document?.name || '', referenceLabel: item.references?.[0]?.label || document?.name || '', open: () => this.openProfileReference(profile.documentId, item.references?.[0]?.sourceId || null) });
                 for (const item of profile.importantItems || []) items.push({ ...item, id: profile.documentId + '_' + (item.label || item.details), documentId: profile.documentId, documentName: document?.name || '', referenceLabel: item.references?.[0]?.label || document?.name || '', open: () => this.openProfileReference(profile.documentId, item.references?.[0]?.sourceId || null) });
             }
+            const model = window.SealarcaTimeline.buildDossierModel(validProfiles, this.documents);
+            const app = this;
+            const entities = Object.fromEntries(Object.entries(model.entities).map(([kind, rows]) => [kind, rows.map(entity => ({
+                ...entity,
+                sourceLinks: (entity.sources || []).map(source => ({
+                    ...source,
+                    open() { app.openProfileReference(source.documentId, source.sourceId); }
+                }))
+            }))]));
             this.folderOverview = {
                 documentCount: this.documents.length,
                 pageCount: this.documents.reduce((sum, document) => sum + (Number(document.metadata?.pageCount) || 0), 0),
@@ -922,8 +1104,401 @@ document.addEventListener('alpine:init', () => {
                 people: unique(validProfiles.flatMap(profile => profile.people || [])),
                 organizations: unique(validProfiles.flatMap(profile => profile.organizations || [])),
                 dates: dates.slice(0, 50),
-                items: items.slice(0, 50)
+                items: items.slice(0, 50),
+                timeline: model.timeline.map(event => ({
+                    ...event,
+                    get displayDate() { return event.date || app.t('dossier.dateUnknown'); },
+                    get extractionNote() { return app.t('dossier.extractionUnverified'); },
+                    sources: event.sources.map(source => ({
+                        ...source,
+                        open: () => this.openProfileReference(source.documentId, source.sourceId)
+                    }))
+                })),
+                entities,
+                analyzedDocumentCount: model.analyzedDocumentCount
             };
+        },
+
+        async loadFolderOperations() {
+            const operations = this.activeFolderId ? await window.sealarcaDb.getOperations(this.activeFolderId) : [];
+            const traceRows = await Promise.all(operations.map(async operation => ({ operation, trace: operation.resultRef?.traceId ? await window.sealarcaDb.getTrace(operation.resultRef.traceId) : null })));
+            this.folderOperations = traceRows.map(({ operation, trace }) => {
+                const app = this;
+                const traceDocuments = (trace?.documents || []).map(item => ({
+                    ...item,
+                    traceStatusLabel: app.t(item.included ? 'dossier.traceIncluded' : 'dossier.traceOmitted')
+                        .replaceAll('{count}', String((trace.sources || []).filter(source => source.documentId === item.id).length)),
+                    visibleSources: (trace.sources || []).filter(source => source.documentId === item.id).map(source => ({
+                        ...source,
+                        open() { app.openProfileReference(source.documentId, source.sourceId); }
+                    }))
+                }));
+                const snapshot = operation.resultRef?.snapshot || {};
+                const resultItems = operation.type === 'timeline' ? (snapshot.timeline || [])
+                    : operation.type === 'obligations' ? (snapshot.obligations || [])
+                        : operation.type === 'amounts' ? (snapshot.amounts || [])
+                            : operation.type === 'compare' ? (snapshot.comparisons || [])
+                                : operation.type === 'divergences' ? (snapshot.divergences || [])
+                                    : operation.type === 'summary' ? (snapshot.summaries || [])
+                                        : Object.values(snapshot.entities || {}).flat();
+                const resultLines = resultItems.slice(0, 40).map((item, index) => {
+                    const comparisonValues = (item.values || []).map(value => value.value).filter(Boolean).join(' / ');
+                    const text = item.summary
+                        ? item.documentName + ': ' + item.summary
+                        : [item.date || item.deadline, item.label || item.name || item.value, item.details || item.amount || comparisonValues].filter(Boolean).join(' — ');
+                    const source = item.sources?.[0] || item.documents?.[0] || item.values?.[0]?.documents?.[0] || null;
+                    return {
+                        id: item.id || operation.id + '_result_' + index,
+                        text: text || String(item.name || item.value || ''),
+                        reference: source?.reference || source?.label || source?.documentName || '',
+                        open() { if (source?.documentId) app.openProfileReference(source.documentId, source.sourceId); }
+                    };
+                });
+                return {
+                    ...operation,
+                    get title() { return app.t('dossier.actions.' + operation.type); },
+                    get statusLabel() { return app.t(window.SealarcaOperations.statusKey(operation.status)); },
+                    get statusClass() { return 'status-' + (['pending', 'running', 'completed', 'partial', 'failed', 'cancelled'].includes(operation.status) ? operation.status : 'warning'); },
+                    get progressLabel() {
+                        const progress = operation.progress || { completed: 0, total: (operation.steps || []).length };
+                        return app.t('dossier.progress').replaceAll('{done}', String(progress.completed || 0)).replaceAll('{total}', String(progress.total || 0));
+                    },
+                    get stepRows() {
+                        return (operation.steps || []).map(step => ({
+                            ...step,
+                            mark: step.status === 'completed' ? '✓' : step.status === 'running' ? '●' : step.status === 'failed' ? '!' : step.status === 'warning' ? '⚠' : '○',
+                            rowClass: 'step-' + step.status,
+                            label: app.t('dossier.steps.' + step.id),
+                            get detailLabel() {
+                                const detail = step.detail;
+                                if (!detail || typeof detail !== 'object' || !['documents', 'profiles', 'results'].includes(detail.kind)) return '';
+                                let value = app.t('dossier.stepDetails.' + detail.kind);
+                                for (const [key, item] of Object.entries(detail)) {
+                                    if (key !== 'kind') value = value.replaceAll('{' + key + '}', String(Number(item) || 0));
+                                }
+                                return value;
+                            }
+                        }));
+                    },
+                    get noticeRows() {
+                        return (operation.notices || []).map((notice, index) => ({
+                            id: operation.id + '_notice_' + index,
+                            className: 'notice-box ' + (['info', 'warning', 'partial', 'error'].includes(notice.severity) ? notice.severity : 'warning'),
+                            text: app.noticeText(notice)
+                        }));
+                    },
+                    get traceSummaryLabel() {
+                        return trace ? app.t('dossier.traceSummary')
+                            .replaceAll('{documents}', String(trace.context?.documentCount || 0))
+                            .replaceAll('{sources}', String(trace.context?.sourceCount || 0))
+                            .replaceAll('{characters}', new Intl.NumberFormat(app.currentLang).format(trace.context?.characters || 0)) : '';
+                    },
+                    get traceDocuments() { return traceDocuments; },
+                    get resultLines() { return resultLines; },
+                    get localOnlyLabel() { return trace?.context?.mode === 'local_profiles' ? app.t('dossier.localOnly') : ''; },
+                    get canCancel() { return operation.status === 'running' && app.operationRuns.has(operation.id); },
+                    get canRetry() { return ['partial', 'failed', 'cancelled'].includes(operation.status); },
+                    get canOpenResult() { return Boolean(operation.resultRef?.section || operation.resultRef?.conversationId); },
+                    cancel() { app.cancelFolderOperation(operation.id); },
+                    retry() { app.retryFolderOperation(operation.id); },
+                    openResult() { app.openOperationResult(operation); }
+                };
+            });
+        },
+
+        noticeText(notice) {
+            let text = this.t('dossier.notices.' + String(notice?.code || 'unknown_notice'));
+            if (text === 'dossier.notices.' + String(notice?.code || 'unknown_notice')) text = this.t('dossier.notices.unknown_notice');
+            for (const [key, value] of Object.entries(notice?.metadata || {})) text = text.replaceAll('{' + key + '}', String(value));
+            return text;
+        },
+
+        documentAnalysisStatus(document, profile = document?.profile) {
+            const job = this.processingJobs.find(item => item.documentId === document?.id);
+            if (job?.status === 'running') return 'processing';
+            if (job?.status === 'pending') return 'pending';
+            if (job?.status === 'failed') return 'error';
+            if (profile?.status === 'valid' && profile.inputFingerprint === window.SealarcaP1.fingerprintDocument(document)) {
+                if ((document?.metadata?.extraction?.warnings || []).length) return 'partial';
+                return 'ready';
+            }
+            if (profile && profile.status !== 'valid') return 'warning';
+            return 'not_analyzed';
+        },
+
+        async runFolderAnalysis(type, requestedDocumentIds = null) {
+            if (!window.SealarcaOperations.OPERATION_ACTIONS[type] || !this.activeFolderId) return;
+            if (this.isStartingFolderOperation || this.operationRuns.size > 0) {
+                this.showToast(this.t('dossier.operationAlreadyRunning'));
+                return;
+            }
+            this.isStartingFolderOperation = true;
+            const folderId = this.activeFolderId;
+            let allDocuments;
+            try {
+                allDocuments = await window.sealarcaDb.getDocuments(folderId);
+            } catch (error) {
+                console.error('Lecture des documents du dossier impossible:', error);
+                this.isStartingFolderOperation = false;
+                this.showToast(this.t('dossier.operationFailed'), 6000);
+                return;
+            }
+            const ids = Array.isArray(requestedDocumentIds) && requestedDocumentIds.length
+                ? requestedDocumentIds
+                : this.selectedDocumentIds.length ? this.selectedDocumentIds : allDocuments.map(document => document.id);
+            const selected = new Set(ids);
+            const requestedDocuments = allDocuments.filter(document => selected.has(document.id));
+            if (!requestedDocuments.length) {
+                this.isStartingFolderOperation = false;
+                this.showToast(this.t('dossier.noDocuments'));
+                return;
+            }
+
+            const maxDocuments = 100;
+            const documents = requestedDocuments.slice(0, maxDocuments);
+            const operationNotices = [];
+            if (requestedDocuments.length > maxDocuments) operationNotices.push(window.SealarcaOperations.createNotice('document_limit_reached', 'partial', { metadata: { limit: maxDocuments } }));
+            let operation = window.SealarcaOperations.createOperation(type, folderId, requestedDocuments.map(document => document.id));
+            operation.notices = operationNotices;
+
+            try {
+                await window.sealarcaDb.createOperation(operation);
+                const ownerId = this.operationOwnerId;
+                const leaseToken = window.SealarcaOperations.makeId('lease');
+                const claimed = await window.sealarcaDb.claimOperation(operation.id, ownerId, leaseToken);
+                if (!claimed) {
+                    await window.sealarcaDb.failPendingOperation(operation.id, window.SealarcaOperations.createNotice('operation_busy', 'warning'));
+                    await this.loadFolderOperations();
+                    this.showToast(this.t('dossier.operationAlreadyRunning'));
+                    return;
+                }
+                operation = claimed;
+                const controller = new AbortController();
+                const run = { controller, ownerId, leaseToken, promise: null };
+                this.operationRuns.set(operation.id, run);
+                await this.loadFolderOperations();
+                const persist = async changes => {
+                    if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+                    const saved = await window.sealarcaDb.updateOperationIfOwner(operation.id, ownerId, leaseToken, changes);
+                    if (!saved) { const error = new Error('La session de cette opération a expiré.'); error.name = 'OperationLeaseError'; throw error; }
+                    operation = saved;
+                    if (this.activeFolderId === folderId) await this.loadFolderOperations();
+                    return operation;
+                };
+                const setStep = async (id, status, detail = null) => {
+                    const next = window.SealarcaOperations.updateOperationStep(operation, id, status, detail);
+                    return persist({ steps: next.steps, progress: next.progress, notices: operation.notices, context: operation.context });
+                };
+
+                const runPromise = (async () => {
+                    try {
+                        await setStep('prepare', 'running');
+                        await setStep('prepare', 'completed', { kind: 'documents', count: documents.length });
+                        await setStep('context', 'running');
+                        const profiles = await window.sealarcaDb.getDocumentProfiles(folderId);
+                        const documentsById = new Map(documents.map(document => [document.id, document]));
+                        const profileByDocument = new Map(profiles
+                            .filter(profile => profile.status === 'valid' && documentsById.has(profile.documentId)
+                                && profile.inputFingerprint === window.SealarcaP1.fingerprintDocument(documentsById.get(profile.documentId)))
+                            .map(profile => [profile.documentId, profile]));
+                        const validProfiles = documents.map(document => profileByDocument.get(document.id)).filter(Boolean);
+                        const missingCount = documents.filter(document => !profileByDocument.has(document.id)).length;
+                        if (missingCount) operationNotices.push(window.SealarcaOperations.createNotice('profiles_missing', 'partial', { metadata: { count: missingCount } }));
+
+                        await setStep('context', 'completed', { kind: 'profiles', count: validProfiles.length, total: documents.length });
+                        operation = await setStep('analyze', 'running', { kind: 'profiles', count: validProfiles.length, total: documents.length });
+                        const model = window.SealarcaTimeline.buildDossierModel(validProfiles, documents);
+                        const comparison = window.SealarcaTimeline.buildComparison(validProfiles, documents);
+                        let selectedResult;
+                        if (type === 'summary') {
+                            const stats = window.SealarcaTimeline.buildDossierSummary(validProfiles, documents);
+                            const overview = this.t('dossier.summaryOverview')
+                                .replaceAll('{profiles}', String(stats.analyzedDocumentCount))
+                                .replaceAll('{documents}', String(stats.documentCount))
+                                .replaceAll('{events}', String(stats.eventCount))
+                                .replaceAll('{people}', String(stats.personCount))
+                                .replaceAll('{organizations}', String(stats.organizationCount))
+                                .replaceAll('{amounts}', String(stats.amountCount))
+                                .replaceAll('{obligations}', String(stats.obligationCount))
+                                .replaceAll('{divergences}', String(stats.apparentDifferenceCount));
+                            const summaries = [{ documentName: this.t('dossier.summaryLocalTitle'), summary: overview, sources: [] }];
+                            if (stats.sharedParties.length) {
+                                summaries.push({
+                                    documentName: this.t('dossier.summarySharedTitle'),
+                                    summary: this.t('dossier.summarySharedEntities')
+                                        .replaceAll('{count}', String(stats.sharedParties.length))
+                                        .replaceAll('{items}', stats.sharedParties.slice(0, 8).map(item => item.name).join(', ')),
+                                    sources: stats.sharedParties.slice(0, 8).flatMap(item => item.sources || [])
+                                });
+                            }
+                            summaries.push(...model.timeline.slice(0, 6).map(event => ({
+                                id: 'summary_event_' + event.id,
+                                documentName: this.t('dossier.timelineTitle'),
+                                summary: [event.date, event.label, event.details].filter(Boolean).join(' — '),
+                                sources: event.sources || []
+                            })));
+                            summaries.push(...model.entities.obligations.slice(0, 6).map(item => ({
+                                id: 'summary_obligation_' + item.id,
+                                documentName: this.t('dossier.obligationsTitle'),
+                                summary: item.name,
+                                sources: item.sources || []
+                            })));
+                            summaries.push(...model.entities.amounts.slice(0, 6).map(item => ({
+                                id: 'summary_amount_' + item.id,
+                                documentName: this.t('dossier.amountsTitle'),
+                                summary: item.name,
+                                sources: item.sources || []
+                            })));
+                            summaries.push(...comparison.divergences.slice(0, 6).map(item => ({
+                                id: 'summary_difference_' + item.id,
+                                documentName: this.t('dossier.actions.divergences'),
+                                summary: item.label + ': ' + item.values.map(value => {
+                                    const documentsLabel = value.documents.map(document => document.documentName).join(', ');
+                                    return documentsLabel ? value.value + ' (' + documentsLabel + ')' : value.value;
+                                }).join(' / '),
+                                sources: item.values.flatMap(value => value.documents || [])
+                            })));
+                            summaries.push(...validProfiles.slice(0, 14).map(profile => ({
+                                documentId: profile.documentId,
+                                documentName: documentsById.get(profile.documentId)?.name || profile.documentId,
+                                summary: String(profile.summary || '').slice(0, 2000),
+                                sources: (profile.references || []).slice(0, 20).map(reference => ({ documentId: profile.documentId, documentName: documentsById.get(profile.documentId)?.name || profile.documentId, sourceId: reference.sourceId || null, reference: reference.label || '' }))
+                            })));
+                            selectedResult = { summaries, stats };
+                        } else if (type === 'timeline') {
+                            selectedResult = { timeline: model.timeline.slice(0, 100), analyzedDocumentCount: model.analyzedDocumentCount, documentCount: model.documentCount };
+                        } else if (type === 'entities') {
+                            selectedResult = { entities: Object.fromEntries(Object.entries(model.entities).map(([key, values]) => [key, values.slice(0, 100)])), analyzedDocumentCount: model.analyzedDocumentCount, documentCount: model.documentCount };
+                        } else if (type === 'obligations') {
+                            selectedResult = { obligations: model.entities.obligations.slice(0, 100), timeline: model.timeline.filter(event => event.kinds.includes('obligation')).slice(0, 100), analyzedDocumentCount: model.analyzedDocumentCount, documentCount: model.documentCount };
+                        } else if (type === 'amounts') {
+                            selectedResult = { amounts: model.entities.amounts.slice(0, 100), analyzedDocumentCount: model.analyzedDocumentCount, documentCount: model.documentCount };
+                        } else if (type === 'compare') {
+                            selectedResult = { comparisons: comparison.comparisons.slice(0, 100), analyzedDocumentCount: comparison.analyzedDocumentCount, documentCount: comparison.documentCount };
+                        } else {
+                            selectedResult = { divergences: comparison.divergences.slice(0, 100), analyzedDocumentCount: comparison.analyzedDocumentCount, documentCount: comparison.documentCount };
+                        }
+
+                        const traceDocuments = documents.map(document => {
+                            const profile = profileByDocument.get(document.id);
+                            const fields = [
+                                ...(profile?.references || []),
+                                ...(profile?.entities || []).flatMap(item => item.references || []),
+                                ...(profile?.importantDates || []).flatMap(item => item.references || []),
+                                ...(profile?.importantAmounts || []).flatMap(item => item.references || []),
+                                ...(profile?.events || []).flatMap(item => item.references || []),
+                                ...(profile?.obligations || []).flatMap(item => item.references || []),
+                                ...(profile?.importantItems || []).flatMap(item => item.references || [])
+                            ];
+                            const sourceIds = [...new Set(fields.map(item => item.sourceId).filter(Boolean))];
+                            return { id: document.id, name: document.name, hash: document.hash || null, pageCount: Number(document.metadata?.pageCount) || null, included: Boolean(profile), characterCount: 0, sourceIds };
+                        });
+                        const traceSources = [];
+                        for (const document of documents) {
+                            const profile = profileByDocument.get(document.id);
+                            if (!profile) continue;
+                            const rows = [
+                                ...(profile.references || []),
+                                ...(profile.entities || []).flatMap(item => item.references || []),
+                                ...(profile.importantDates || []).flatMap(item => item.references || []),
+                                ...(profile.importantAmounts || []).flatMap(item => item.references || []),
+                                ...(profile.events || []).flatMap(item => item.references || []),
+                                ...(profile.obligations || []).flatMap(item => item.references || []),
+                                ...(profile.importantItems || []).flatMap(item => item.references || [])
+                            ];
+                            for (const row of rows) {
+                                const source = (document.sourceMap || []).find(item => item.id === row.sourceId);
+                                const reference = String(row.label || (source ? window.SealarcaP1.sourceReference(document, source) : document.name));
+                                if (!traceSources.some(item => item.documentId === document.id && item.sourceId === (row.sourceId || null))) {
+                                    traceSources.push({ documentId: document.id, documentName: document.name, sourceId: row.sourceId || null, reference, locator: source?.locator || null, characterCount: 0 });
+                                }
+                            }
+                        }
+
+                        operation = await persist({
+                            steps: operation.steps,
+                            progress: operation.progress,
+                            notices: operationNotices,
+                            context: { mode: 'local_profiles', characters: 0, documentCount: validProfiles.length, sourceCount: traceSources.length }
+                        });
+                        await setStep('analyze', 'completed');
+                        const resultCount = Object.values(selectedResult).find(Array.isArray)?.length || 0;
+                        await setStep('save', 'running', { kind: 'results', count: resultCount, sources: traceSources.length });
+
+                        const trace = window.SealarcaOperations.createTrace({
+                            folderId,
+                            operation,
+                            manifest: { mode: 'local_profiles', characters: 0, documents: traceDocuments, sources: traceSources },
+                            notices: operationNotices,
+                            model: null
+                        });
+                        const status = operationNotices.some(notice => notice.severity === 'partial') ? 'partial' : 'completed';
+                        const completedSteps = window.SealarcaOperations.updateOperationStep(operation, 'save', 'completed', { kind: 'results', count: resultCount, sources: traceSources.length });
+                        const completed = await window.sealarcaDb.completeLocalOperation({
+                            operationId: operation.id,
+                            ownerId,
+                            leaseToken,
+                            operationChanges: { status, steps: completedSteps.steps, progress: completedSteps.progress, notices: operationNotices, context: { mode: 'local_profiles', characters: 0, documentCount: validProfiles.length, sourceCount: traceSources.length } },
+                            trace,
+                            resultRef: { section: type === 'timeline' || type === 'obligations' ? 'timeline' : 'overview', type, snapshot: selectedResult }
+                        });
+                        if (!completed) { const error = new Error('La session de cette opération a expiré.'); error.name = 'OperationLeaseError'; throw error; }
+                        operation = completed.operation;
+
+                        if (this.activeFolderId === folderId) {
+                            this.documentProfiles = profiles;
+                            this.buildFolderOverview();
+                            if (status === 'partial') this.showToast(this.noticeText(operationNotices[operationNotices.length - 1]), 6000);
+                        }
+                    } catch (error) {
+                        if (error?.name === 'AbortError' || controller.signal.aborted) {
+                            operationNotices.push(window.SealarcaOperations.createNotice('operation_cancelled', 'info'));
+                            await window.sealarcaDb.updateOperationIfOwner(operation.id, ownerId, leaseToken, { status: 'cancelled', notices: operationNotices });
+                        } else if (error?.name !== 'OperationLeaseError') {
+                            operationNotices.push(window.SealarcaOperations.createNotice('operation_failed', 'error'));
+                            await window.sealarcaDb.updateOperationIfOwner(operation.id, ownerId, leaseToken, { status: 'failed', notices: operationNotices });
+                            this.showToast(this.t('dossier.operationFailed'), 6000);
+                        }
+                    } finally {
+                        this.operationRuns.delete(operation.id);
+                        if (this.activeFolderId === folderId) {
+                            await this.loadFolderOperations();
+                            this.buildFolderOverview();
+                        }
+                    }
+                })();
+                run.promise = runPromise;
+                this.isStartingFolderOperation = false;
+                await runPromise;
+            } catch (error) {
+                console.error('Démarrage de l’opération impossible:', error);
+                this.operationRuns.delete(operation.id);
+                this.showToast(this.t('dossier.operationFailed'), 6000);
+                if (this.activeFolderId === folderId) await this.loadFolderOperations();
+            } finally {
+                this.isStartingFolderOperation = false;
+            }
+        },
+
+        async cancelFolderOperation(operationId = null) {
+            const id = operationId || this.runningFolderOperation?.id;
+            const run = id ? this.operationRuns.get(id) : null;
+            if (!run) return;
+            run.controller.abort('cancelled');
+            await run.promise;
+        },
+
+        async retryFolderOperation(operationId) {
+            const operation = this.folderOperations.find(item => item.id === operationId);
+            if (operation && ['partial', 'failed', 'cancelled'].includes(operation.status)) {
+                await this.runFolderAnalysis(operation.type, operation.documentIds);
+            }
+        },
+
+        async openOperationResult(operation) {
+            if (!operation?.resultRef?.section) return;
+            if (operation.resultRef.section === 'timeline') this.openTimelineTab();
+            else this.openOverviewTab();
         },
 
         async queueDocumentProfile(documentId) {
@@ -975,6 +1550,12 @@ document.addEventListener('alpine:init', () => {
             this.folderOverview.dates.forEach(item => lines.push('- ' + [item.date, item.label].filter(Boolean).join(' — ')));
             lines.push('', '## Personnes / organisations', '');
             [...this.folderOverview.people, ...this.folderOverview.organizations].forEach(item => lines.push('- ' + item));
+            lines.push('', '## Chronologie', '');
+            this.folderOverview.timeline.forEach(item => lines.push('- ' + [item.date, item.label, item.details, item.sources?.[0]?.reference].filter(Boolean).join(' — ')));
+            lines.push('', '## Montants', '');
+            this.folderOverview.entities.amounts.forEach(item => lines.push('- ' + item.name + (item.sources?.[0]?.reference ? ' — ' + item.sources[0].reference : '')));
+            lines.push('', '## Obligations', '');
+            this.folderOverview.entities.obligations.forEach(item => lines.push('- ' + item.name + (item.sources?.[0]?.reference ? ' — ' + item.sources[0].reference : '')));
             lines.push('', '## Éléments importants', '');
             this.folderOverview.items.forEach(item => lines.push('- ' + (item.label || item.details) + (item.references?.[0]?.label ? ' — ' + item.references[0].label : '')));
             const blob = new Blob([lines.join('\n') + '\n'], { type: 'text/markdown;charset=utf-8' });
@@ -1007,9 +1588,21 @@ document.addEventListener('alpine:init', () => {
 
         decorateMessage(message) {
             const app = this;
+            const trace = message.trace || null;
+            const traceSources = Array.isArray(trace?.sources) ? trace.sources : [];
+            const traceDocuments = (trace?.documents || []).map(item => ({
+                ...item,
+                traceStatusLabel: app.t(item.included ? 'dossier.traceIncluded' : 'dossier.traceOmitted')
+                    .replaceAll('{count}', String(traceSources.filter(source => source.documentId === item.id).length)),
+                visibleSources: traceSources.filter(source => source.documentId === item.id).map(source => ({
+                    ...source,
+                    open() { app.openProfileReference(source.documentId, source.sourceId); }
+                }))
+            }));
             const decorated = {
                 ...message,
                 _showReasoning: message._showReasoning !== false,
+                _showTrace: message._showTrace === undefined ? Boolean(trace && traceDocuments.length <= 3 && traceSources.length <= 6) : message._showTrace,
                 get senderInitial() { return message.role === 'assistant' ? 'S' : 'V'; },
                 get senderName() { return message.role === 'assistant' ? 'Sealarca Vault' : app.t('app.you'); },
                 get interruptedLabel() { return message.interrupted ? app.t('app.streamInterrupted') : ''; },
@@ -1018,10 +1611,28 @@ document.addEventListener('alpine:init', () => {
                 get hasReasoning() { return Boolean(message.reasoning); },
                 get hasCitations() { return Array.isArray(message.citations) && message.citations.length > 0; },
                 get visibleCitations() { return (message.citations || []).map(citation => ({ ...citation, open() { app.openProfileReference(citation.documentId, citation.sourceId); } })); },
+                get hasTrace() { return Boolean(trace); },
+                get traceDocuments() { return traceDocuments; },
+                get traceVisible() { return decorated._showTrace !== false; },
+                get traceToggleLabel() { return app.t(decorated._showTrace ? 'dossier.hideTrace' : 'dossier.showTrace'); },
+                get traceSummaryLabel() {
+                    return app.t('dossier.traceSummary')
+                        .replaceAll('{documents}', String(trace?.context?.documentCount || 0))
+                        .replaceAll('{sources}', String(trace?.context?.sourceCount || 0))
+                        .replaceAll('{characters}', new Intl.NumberFormat(app.currentLang).format(trace?.context?.characters || 0));
+                },
+                get traceNotices() {
+                    return (trace?.notices || []).map((notice, index) => ({
+                        id: (trace?.id || message.id || 'trace') + '_notice_' + index,
+                        className: 'notice-box ' + (['info', 'warning', 'partial', 'error'].includes(notice.severity) ? notice.severity : 'warning'),
+                        text: app.noticeText(notice)
+                    }));
+                },
                 get reasoningLabel() { return app.t(decorated._showReasoning ? 'reasoning.hide' : 'reasoning.show'); },
                 get reasoningVisible() { return decorated._showReasoning !== false; },
                 get renderedContent() { return app.renderMarkdown(message.content); },
                 toggleReasoning() { decorated._showReasoning = !decorated._showReasoning; },
+                toggleTrace() { decorated._showTrace = !decorated._showTrace; },
                 copy() { app.copyText(message.content); }
             };
             return decorated;
@@ -1054,7 +1665,10 @@ document.addEventListener('alpine:init', () => {
             if (this.isStreaming || this.activeConversationId === id) return;
             this.activeConversationId = id;
             const loadedMessages = await window.sealarcaDb.getMessages(id);
-            this.messages = loadedMessages.map(message => this.decorateMessage(message));
+            this.messages = await Promise.all(loadedMessages.map(async message => this.decorateMessage({
+                ...message,
+                trace: message.traceId ? await window.sealarcaDb.getTrace(message.traceId) : null
+            })));
             this.selectedDocumentIds = [];
             this.attachedFiles = [];
             this.currentStreamingMessage = '';
@@ -1116,13 +1730,14 @@ document.addEventListener('alpine:init', () => {
 
             // 2. Conserver uniquement les références documentaires dans le message.
             const folderId = this.activeFolderId || window.SEALARCA_DEFAULT_FOLDER_ID;
+            const contextMode = this.effectiveContextMode;
             const folderDocuments = await window.sealarcaDb.getDocuments(folderId);
-            const automaticSelection = this.contextMode === 'automatic'
+            const automaticSelection = contextMode === 'automatic'
                 ? (text
                     ? window.SealarcaP1.selectRelevantDocuments(folderDocuments, text, { limit: 5 })
                     : this.selectedDocumentIds.map(id => ({ document: folderDocuments.find(document => document.id === id), score: 0 })).filter(item => item.document))
                 : [];
-            const requestedIds = this.contextMode === 'automatic'
+            const requestedIds = contextMode === 'automatic'
                 ? automaticSelection.map(item => item.document.id)
                 : this.selectedDocumentIds;
             const selectedDocuments = (await window.sealarcaDb.getDocumentsByIds(requestedIds))
@@ -1142,7 +1757,7 @@ document.addEventListener('alpine:init', () => {
                 content: text || (selectedDocuments[0] ? `[${selectedDocuments[0].name}]` : '...'),
                 documentRefs,
                 contextSelection: {
-                    mode: this.contextMode === 'automatic' ? 'automatic' : 'manual',
+                    mode: contextMode === 'automatic' ? 'automatic' : 'manual',
                     scope: 'folder',
                     folderId,
                     documentIds: documentRefs.map(document => document.id)
@@ -1151,7 +1766,7 @@ document.addEventListener('alpine:init', () => {
             };
 
             // Construire et borner exactement le texte qui serait envoyé avant de persister le message.
-            const documentContext = this.buildDocumentContext(selectedDocuments, text, this.contextMode);
+            const documentContext = this.buildDocumentContext(selectedDocuments, text, contextMode);
             const apiMessages = this.buildConversationHistory();
             apiMessages.push({ role: 'user', content: userMsg.content + documentContext.text });
             const systemPrompt = this.selectedRole ? this.selectedRole.systemPrompt : null;
@@ -1214,8 +1829,25 @@ document.addEventListener('alpine:init', () => {
                                 citations: window.SealarcaP1.extractCitations(finalText, documentContext.citationDocuments),
                                 createdAt: Date.now()
                             };
-                            await window.sealarcaDb.saveMessage(assistantMsg);
-                            this.messages.push(this.decorateMessage(assistantMsg));
+                            const hasDocumentContext = documentContext.manifest.documents.some(document => document.included);
+                            const trace = hasDocumentContext ? window.SealarcaOperations.createTrace({
+                                folderId,
+                                conversationId,
+                                messageId: assistantMsg.id,
+                                manifest: documentContext.manifest,
+                                notices: [
+                                    ...documentContext.notices,
+                                    ...(metadata.interrupted ? [window.SealarcaOperations.createNotice('response_interrupted', 'partial', { metadata: { reason: metadata.reason || 'cancelled' } })] : [])
+                                ],
+                                model: this.selectedModel
+                            }) : null;
+                            if (trace) {
+                                assistantMsg.traceId = trace.id;
+                                await window.sealarcaDb.saveMessageWithTrace(assistantMsg, trace);
+                            } else {
+                                await window.sealarcaDb.saveMessage(assistantMsg);
+                            }
+                            this.messages.push(this.decorateMessage({ ...assistantMsg, trace }));
                         }
 
                         // Mettre à jour l'horodatage de la conversation

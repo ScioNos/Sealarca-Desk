@@ -7,12 +7,13 @@
     
     <!-- Sécurité CSP stricte : Aucun script externe, requêtes autorisées uniquement vers Sealarca Vault et local -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' file: blob: data:; script-src 'self' file:; style-src 'self' file: 'unsafe-inline'; img-src 'self' file: data: blob:; font-src 'self' file: data:; connect-src 'self' file: blob: data: https://api.sealarca.ch http://localhost:* http://127.0.0.1:*; worker-src 'self' file: blob:; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'none';">
-    <script src="js/boot-theme.js?v=1.1.0"></script>
+    <script src="js/boot-theme.js?v=1.2.0"></script>
 
     <!-- Feuilles de style officielles Sealarca -->
     <link rel="stylesheet" href="css/theme.css">
     <link rel="stylesheet" href="css/layout.css">
     <link rel="stylesheet" href="css/components.css">
+    <link rel="stylesheet" href="css/document-experience.css">
 </head>
 <body>
 
@@ -252,6 +253,24 @@
                             <template x-if="msg.hasCitations">
                                 <div class="message-citations"><strong>Sources citées</strong><template x-for="citation in msg.visibleCitations" :key="citation.documentId + citation.sourceId"><button type="button" @click="citation.open" x-text="citation.label"></button></template></div>
                             </template>
+                            <template x-if="msg.hasTrace">
+                                <section class="trace-drawer">
+                                    <button type="button" class="trace-drawer-toggle" @click="msg.toggleTrace" :aria-expanded="msg.traceVisible">
+                                        <strong x-text="msg.traceSummaryLabel"></strong><span x-text="msg.traceToggleLabel"></span>
+                                    </button>
+                                    <div class="trace-drawer-body" x-show="msg.traceVisible">
+                                        <template x-for="doc in msg.traceDocuments" :key="doc.id">
+                                            <div class="trace-document-row">
+                                                <span class="status-dot" :class="doc.included ? 'status-ready' : 'status-partial'" aria-hidden="true"></span>
+                                                <div class="trace-document-main"><strong x-text="doc.name"></strong><small x-text="doc.traceStatusLabel"></small>
+                                                    <div class="trace-source-list"><template x-for="source in doc.visibleSources" :key="source.sourceId || source.reference"><button type="button" class="trace-source-link" @click="source.open" x-text="source.reference"></button></template></div>
+                                                </div>
+                                            </div>
+                                        </template>
+                                        <template x-for="notice in msg.traceNotices" :key="notice.id"><p :class="notice.className" x-text="notice.text"></p></template>
+                                    </div>
+                                </section>
+                            </template>
                             </div>
                         </div>
                     </template>
@@ -490,6 +509,7 @@
                 </div>
                 <div class="workspace-tabs" role="tablist" aria-label="Espace documentaire" @keydown="handleWorkspaceTabsKeydown">
                     <button type="button" id="overview-tab" class="workspace-tab" :class="overviewTabClass" role="tab" aria-controls="overview-panel" :aria-selected="isOverviewTab" @click="openOverviewTab" x-text="documentsOverviewTab"></button>
+                    <button type="button" id="timeline-tab" class="workspace-tab" :class="timelineTabClass" role="tab" aria-controls="timeline-panel" :aria-selected="isTimelineTab" @click="openTimelineTab" x-text="dossierTimelineTabLabel"></button>
                     <button type="button" id="library-tab" class="workspace-tab" :class="libraryTabClass" role="tab" aria-controls="library-panel" :aria-selected="isLibraryTab" @click="openLibraryTab" x-text="documentsLibraryTab"></button>
                     <button type="button" id="search-tab" class="workspace-tab" :class="searchTabClass" role="tab" aria-controls="search-panel" :aria-selected="isSearchTab" @click="openSearchTab" x-text="documentsSearchTab"></button>
                     <button type="button" id="jobs-tab" class="workspace-tab" :class="jobsTabClass" role="tab" aria-controls="jobs-panel" :aria-selected="isJobsTab" @click="openJobsTab" x-text="documentsJobsTab"></button>
@@ -512,6 +532,62 @@
                             <div class="overview-stat"><span x-text="documentsVolumeStat"></span><strong x-text="folderOverviewPagesLabel"></strong></div>
                             <div class="overview-stat"><span x-text="documentsProfilesStat"></span><strong x-text="folderOverviewProfilesLabel"></strong></div>
                         </div>
+                        <section class="dossier-action-section" aria-labelledby="dossier-actions-title">
+                            <div class="dossier-section-heading"><h3 id="dossier-actions-title" x-text="dossierActionsTitle"></h3><small x-text="dossierProfileCoverageLabel"></small></div>
+                            <p x-text="dossierLocalActionHelp"></p>
+                            <div class="dossier-action-list">
+                                <button type="button" class="btn btn-secondary" @click="runFolderAnalysis('summary')" :disabled="folderActionsDisabled" x-text="dossierSummaryAction"></button>
+                                <button type="button" class="btn btn-secondary" @click="runFolderAnalysis('timeline')" :disabled="folderActionsDisabled" x-text="dossierTimelineAction"></button>
+                                <button type="button" class="btn btn-secondary" @click="runFolderAnalysis('entities')" :disabled="folderActionsDisabled" x-text="dossierEntitiesAction"></button>
+                                <button type="button" class="btn btn-secondary" @click="runFolderAnalysis('obligations')" :disabled="folderActionsDisabled" x-text="dossierObligationsAction"></button>
+                                <button type="button" class="btn btn-secondary" @click="runFolderAnalysis('compare')" :disabled="folderActionsDisabled" x-text="dossierCompareAction"></button>
+                                <button type="button" class="btn btn-secondary" @click="runFolderAnalysis('divergences')" :disabled="folderActionsDisabled" x-text="dossierDivergencesAction"></button>
+                                <button type="button" class="btn btn-secondary" @click="runFolderAnalysis('amounts')" :disabled="folderActionsDisabled" x-text="dossierAmountsAction"></button>
+                            </div>
+                            <button type="button" class="dossier-options-toggle" @click="toggleFolderOptions" :aria-expanded="isFolderOptionsOpen" x-text="dossierAdvancedOptions"></button>
+                            <div class="dossier-folder-options" x-show="isFolderOptionsOpen">
+                                <label><span x-text="dossierFolderContextSetting"></span>
+                                    <select :value="folderContextModeOverride" @change="setFolderContextModeOverride">
+                                        <option value="" x-text="dossierInheritContextSetting"></option>
+                                        <option value="manual" x-text="dossierManualContextSetting"></option>
+                                        <option value="automatic" x-text="dossierAutomaticContextSetting"></option>
+                                    </select>
+                                </label>
+                            </div>
+                        </section>
+                        <section class="dossier-operations-section" aria-labelledby="dossier-operations-title">
+                            <div class="dossier-section-heading"><h3 id="dossier-operations-title" x-text="dossierOperationTitle"></h3></div>
+                            <p class="document-empty" x-show="hasNoFolderOperations" x-text="dossierOperationsEmpty"></p>
+                            <div class="dossier-operation-list" x-show="hasFolderOperations">
+                                <template x-for="operation in visibleFolderOperations" :key="operation.id">
+                                    <details class="dossier-operation">
+                                        <summary>
+                                            <span class="status-chip" :class="operation.statusClass" x-text="operation.statusLabel"></span>
+                                            <strong x-text="operation.title"></strong>
+                                            <small x-text="operation.progressLabel"></small>
+                                        </summary>
+                                        <div class="dossier-operation-body">
+                                            <ul class="operation-plan"><template x-for="step in operation.stepRows" :key="step.id"><li :class="step.rowClass"><span aria-hidden="true" x-text="step.mark"></span><div class="operation-step-copy"><span x-text="step.label"></span><small x-show="step.detailLabel" x-text="step.detailLabel"></small></div></li></template></ul>
+                                            <template x-for="notice in operation.noticeRows" :key="notice.id"><p :class="notice.className" x-text="notice.text"></p></template>
+                                            <div class="trace-drawer" x-show="operation.traceDocuments.length">
+                                                <div class="trace-drawer-heading"><strong x-text="operation.traceSummaryLabel"></strong><span class="local-only-chip" x-show="operation.localOnlyLabel" x-text="operation.localOnlyLabel"></span></div>
+                                                <template x-for="doc in operation.traceDocuments" :key="doc.id">
+                                                    <div class="trace-document-row"><span class="status-dot" :class="doc.included ? 'status-ready' : 'status-partial'" aria-hidden="true"></span><div class="trace-document-main"><strong x-text="doc.name"></strong><small x-text="doc.traceStatusLabel"></small><div class="trace-source-list"><template x-for="source in doc.visibleSources" :key="source.sourceId || source.reference"><button type="button" class="trace-source-link" @click="source.open" x-text="source.reference"></button></template></div></div></div>
+                                                </template>
+                                            </div>
+                                            <div class="operation-result-list" x-show="operation.resultLines.length">
+                                                <template x-for="line in operation.resultLines" :key="line.id"><div class="operation-result-line"><span x-text="line.text"></span><button type="button" x-show="line.reference" @click="line.open" x-text="line.reference"></button></div></template>
+                                            </div>
+                                            <div class="dossier-operation-actions">
+                                                <button type="button" class="btn btn-secondary btn-compact" x-show="operation.canCancel" @click="operation.cancel" x-text="dossierCancelOperation"></button>
+                                                <button type="button" class="btn btn-secondary btn-compact" x-show="operation.canRetry" @click="operation.retry" x-text="dossierRetryOperation"></button>
+                                                <button type="button" class="btn btn-secondary btn-compact" x-show="operation.canOpenResult" @click="operation.openResult" x-text="dossierOpenResult"></button>
+                                            </div>
+                                        </div>
+                                    </details>
+                                </template>
+                            </div>
+                        </section>
                         <div class="overview-grid">
                             <article class="overview-section overview-documents">
                                 <div class="overview-section-title"><span x-text="documentsSectionLabel"></span><small x-text="folderOverview.documentCount"></small></div>
@@ -520,7 +596,7 @@
                                     <template x-for="doc in documents" :key="doc.id">
                                         <button type="button" class="overview-document" @click="doc.preview">
                                             <span class="document-type-mark" x-text="doc.extension"></span>
-                                            <span><strong x-text="doc.name"></strong><small class="extraction-warning" x-show="doc.warningText" x-text="doc.warningText"></small><small><span x-text="doc.pageLabel"></span><span x-text="doc.profileStatusLabel"></span></small></span>
+                                            <span><strong x-text="doc.name"></strong><small class="extraction-warning" x-show="doc.warningText" x-text="doc.warningText"></small><small><span x-text="doc.pageLabel"></span><span class="status-chip" :class="doc.analysisStatusClass" x-text="doc.analysisStatusLabel"></span></small></span>
                                             <span aria-hidden="true">↗</span>
                                         </button>
                                     </template>
@@ -548,7 +624,40 @@
                                     </template>
                                 </div>
                             </article>
+                            <article class="overview-section dossier-structured-section">
+                                <div class="overview-section-title"><span x-text="dossierEntitiesTitle"></span></div>
+                                <div class="dossier-entity-list">
+                                    <template x-for="entity in dossierParties" :key="entity.id">
+                                        <div class="dossier-entity-row"><strong x-text="entity.name"></strong><div class="trace-source-list"><template x-for="source in entity.sourceLinks" :key="source.documentId + (source.sourceId || '')"><button type="button" class="trace-source-link" @click="source.open" x-text="source.reference"></button></template></div></div>
+                                    </template>
+                                </div>
+                            </article>
+                            <article class="overview-section dossier-structured-section">
+                                <div class="overview-section-title"><span x-text="dossierAmountsTitle"></span></div>
+                                <p class="overview-empty" x-show="!hasDossierAmounts" x-text="dossierAmountsEmpty"></p>
+                                <div class="dossier-entity-list"><template x-for="amount in folderOverview.entities.amounts" :key="amount.id"><div class="dossier-entity-row"><strong x-text="amount.name"></strong><div class="trace-source-list"><template x-for="source in amount.sourceLinks" :key="source.documentId + (source.sourceId || '')"><button type="button" class="trace-source-link" @click="source.open" x-text="source.reference"></button></template></div></div></template></div>
+                            </article>
+                            <article class="overview-section dossier-structured-section">
+                                <div class="overview-section-title"><span x-text="dossierObligationsTitle"></span></div>
+                                <p class="overview-empty" x-show="!hasDossierObligations" x-text="dossierObligationsEmpty"></p>
+                                <div class="dossier-entity-list"><template x-for="obligation in folderOverview.entities.obligations" :key="obligation.id"><div class="dossier-entity-row"><strong x-text="obligation.name"></strong><div class="trace-source-list"><template x-for="source in obligation.sourceLinks" :key="source.documentId + (source.sourceId || '')"><button type="button" class="trace-source-link" @click="source.open" x-text="source.reference"></button></template></div></div></template></div>
+                            </article>
                         </div>
+                    </section>
+
+                    <section id="timeline-panel" x-show="isTimelineTab" class="timeline-panel" role="tabpanel" aria-labelledby="timeline-tab" :aria-hidden="!isTimelineTab" tabindex="0">
+                        <div class="dossier-section-heading"><h3 x-text="dossierTimelineTitle"></h3><small x-text="dossierProfileCoverageLabel"></small></div>
+                        <p class="document-empty" x-show="!hasTimelineEvents" x-text="dossierTimelineEmpty"></p>
+                        <ol class="dossier-timeline" x-show="hasTimelineEvents">
+                            <template x-for="event in folderOverview.timeline" :key="event.id">
+                                <li class="timeline-event">
+                                    <span class="timeline-marker" aria-hidden="true"></span>
+                                    <div class="timeline-event-main"><time x-text="event.displayDate"></time><h4 x-text="event.label"></h4><p x-show="event.details" x-text="event.details"></p><span class="timeline-extraction-note" x-text="event.extractionNote"></span>
+                                        <div class="trace-source-list"><template x-for="source in event.sources" :key="source.documentId + (source.sourceId || '')"><button type="button" class="trace-source-link" @click="source.open" x-text="source.reference"></button></template></div>
+                                    </div>
+                                </li>
+                            </template>
+                        </ol>
                     </section>
 
                     <section id="library-panel" x-show="isLibraryTab" class="document-library" role="tabpanel" aria-labelledby="library-tab" :aria-hidden="!isLibraryTab" tabindex="0">
@@ -570,7 +679,7 @@
                                 <div class="document-row" :class="doc.selectionClass">
                                     <button type="button" class="document-select" @click="doc.toggle" :aria-pressed="doc.isSelected">
                                         <span class="document-check" x-text="doc.selectionMark"></span>
-                                        <span class="document-main"><strong x-text="doc.name"></strong><small class="extraction-warning" x-show="doc.warningText" x-text="doc.warningText"></small><small><span x-text="doc.extension"></span> · <span x-text="doc.sizeLabel"></span> · <span x-text="doc.profileStatusLabel"></span></small></span>
+                                        <span class="document-main"><strong x-text="doc.name"></strong><small class="extraction-warning" x-show="doc.warningText" x-text="doc.warningText"></small><small><span x-text="doc.extension"></span> · <span x-text="doc.sizeLabel"></span><template x-if="doc.pageLabel"> · <span x-text="doc.pageLabel"></span></template> · <span class="status-chip" :class="doc.analysisStatusClass" x-text="doc.analysisStatusLabel"></span></small><small x-show="doc.profileAnalysisDateLabel" x-text="doc.profileAnalysisDateLabel"></small></span>
                                     </button>
                                     <div class="document-actions">
                                         <button type="button" class="btn btn-secondary btn-compact" @click="doc.generateProfile" x-text="documentsGenerateProfile"></button>
@@ -634,6 +743,9 @@
                                 <div class="profile-heading"><span x-text="documentsProfileTitle"></span><strong x-text="previewProfile.documentType"></strong></div>
                                 <p x-text="previewProfile.summary"></p>
                                 <div class="profile-columns"><div><small x-text="documentsPeopleLabel"></small><div class="entity-cloud"><template x-for="person in previewProfile.people" :key="person"><span class="entity-chip person" x-text="person"></span></template></div></div><div><small x-text="documentsOrganizationsLabel"></small><div class="entity-cloud"><template x-for="organization in previewProfile.organizations" :key="organization"><span class="entity-chip organization" x-text="organization"></span></template></div></div></div>
+                                <div class="profile-fact-list" x-show="previewHasProfileFacts">
+                                    <template x-for="fact in previewProfileFacts" :key="fact.id"><div class="profile-fact-row"><span class="profile-fact-kind" x-text="fact.kind === 'amount' ? dossierAmountsTitle : dossierObligationsTitle"></span><strong x-text="fact.value"></strong><small x-show="fact.detail" x-text="fact.detail"></small><button type="button" class="trace-source-link" x-show="fact.reference" @click="fact.open" x-text="fact.reference"></button></div></template>
+                                </div>
                             </div>
                         </template>
                         <div id="document-preview-markdown" class="modal-body document-preview-markdown markdown-body" x-safe-html="previewMarkdown"></div>
@@ -659,18 +771,20 @@
     <!-- =====================================================================
          Scripts locaux (Zéro CDN; les opérations IA nécessitent le réseau)
          ===================================================================== -->
-    <script src="vendor/jszip.min.js?v=1.1.0"></script>
-    <script src="vendor/pdf.worker.min.js?v=1.1.0"></script>
-    <script src="vendor/pdf.min.js?v=1.1.0"></script>
-    <script src="vendor/marked.min.js?v=1.1.0"></script>
-    <script src="vendor/purify.min.js?v=1.1.0"></script>
+    <script src="vendor/jszip.min.js?v=1.2.0"></script>
+    <script src="vendor/pdf.worker.min.js?v=1.2.0"></script>
+    <script src="vendor/pdf.min.js?v=1.2.0"></script>
+    <script src="vendor/marked.min.js?v=1.2.0"></script>
+    <script src="vendor/purify.min.js?v=1.2.0"></script>
     
-    <script src="js/i18n.js?v=1.1.0"></script>
-    <script src="js/db.js?v=1.1.0"></script>
-    <script src="js/doc-handler.js?v=1.1.0"></script>
-    <script src="js/api.js?v=1.1.0"></script>
-    <script src="js/p1.js?v=1.1.0"></script>
-    <script src="js/app.js?v=1.1.0"></script>
+    <script src="js/i18n.js?v=1.2.0"></script>
+    <script src="js/db.js?v=1.2.0"></script>
+    <script src="js/doc-handler.js?v=1.2.0"></script>
+    <script src="js/api.js?v=1.2.0"></script>
+    <script src="js/p1.js?v=1.2.0"></script>
+    <script src="js/operations.js?v=1.2.0"></script>
+    <script src="js/timeline.js?v=1.2.0"></script>
+    <script src="js/app.js?v=1.2.0"></script>
     <script src="vendor/alpine-csp.min.js?v=3.16.2" defer></script>
 </body>
 </html>

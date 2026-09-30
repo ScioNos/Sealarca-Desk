@@ -67,6 +67,26 @@ test('la fiche filtre toute provenance inventée et conserve son fingerprint', (
     assert.equal(profile.importantDates[0].references[0].label, 'contrat.pdf — p. 21');
 });
 
+test('le schéma de fiche v2 garde entités, montants, événements et obligations avec leurs sources valides', () => {
+    const p1 = loadP1();
+    const document = sampleDocuments()[0];
+    const profile = p1.normalizeProfile({
+        people: [{ name: 'Alice Dupont', sourceIds: ['page_21', 'made_up'] }],
+        organizations: [{ name: 'Société A', sourceIds: ['page_21'] }],
+        importantAmounts: [{ amount: 'CHF 12 000', label: 'Honoraires', sourceIds: ['page_21'] }],
+        events: [{ date: '2025-01-14', label: 'Résiliation', details: 'Fin du contrat', sourceIds: ['page_21'] }],
+        obligations: [{ label: 'Notifier', details: 'Par écrit', deadline: '2025-01-14', sourceIds: ['page_21'] }]
+    }, document, p1.fingerprintDocument(document));
+    assert.equal(p1.PROFILE_SCHEMA_VERSION, 2);
+    assert.equal(p1.PROFILE_PROMPT_VERSION, 'document-profile-v2');
+    assert.deepEqual(Array.from(profile.people), ['Alice Dupont']);
+    assert.deepEqual(Array.from(profile.entities[0].sourceIds), ['page_21']);
+    assert.deepEqual(Array.from(profile.importantAmounts[0].sourceIds), ['page_21']);
+    assert.equal(profile.events[0].date, '2025-01-14');
+    assert.equal(profile.obligations[0].deadline, '2025-01-14');
+    assert.equal(profile.importantAmounts[0].references[0].label, 'contrat.pdf — p. 21');
+});
+
 test('la fiche ne transmet et n’accepte que les sources comprises dans ses 120 000 caractères', () => {
     const p1 = loadP1();
     const markdown = 'A'.repeat(120000) + 'B'.repeat(20);

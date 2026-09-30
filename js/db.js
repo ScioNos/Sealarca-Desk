@@ -5,7 +5,7 @@
  */
 
 const DB_NAME = 'sealarca_desk_db';
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 const DEFAULT_FOLDER_ID = 'folder_default';
 const DEFAULT_ROLE_ID = 'role-document-analysis';
 const SYSTEM_ROLE_VERSION = 2;
@@ -224,6 +224,27 @@ class SealarcaDB {
                     jobStore.createIndex('inputFingerprint', 'inputFingerprint', { unique: false });
                 }
 
+                let operationStore;
+                if (!db.objectStoreNames.contains('operations')) {
+                    operationStore = db.createObjectStore('operations', { keyPath: 'id' });
+                } else {
+                    operationStore = tx.objectStore('operations');
+                }
+                if (!operationStore.indexNames.contains('folderId')) operationStore.createIndex('folderId', 'folderId', { unique: false });
+                if (!operationStore.indexNames.contains('status')) operationStore.createIndex('status', 'status', { unique: false });
+                if (!operationStore.indexNames.contains('updatedAt')) operationStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+
+                let traceStore;
+                if (!db.objectStoreNames.contains('traces')) {
+                    traceStore = db.createObjectStore('traces', { keyPath: 'id' });
+                } else {
+                    traceStore = tx.objectStore('traces');
+                }
+                if (!traceStore.indexNames.contains('folderId')) traceStore.createIndex('folderId', 'folderId', { unique: false });
+                if (!traceStore.indexNames.contains('conversationId')) traceStore.createIndex('conversationId', 'conversationId', { unique: false });
+                if (!traceStore.indexNames.contains('operationId')) traceStore.createIndex('operationId', 'operationId', { unique: false });
+                if (!traceStore.indexNames.contains('createdAt')) traceStore.createIndex('createdAt', 'createdAt', { unique: false });
+
                 if (oldVersion < 2) {
                     const now = Date.now();
                     folderStore.put({
@@ -426,6 +447,11 @@ class SealarcaDB {
             description: String(folder.description || '').trim(),
             tags: Array.isArray(folder.tags) ? folder.tags : [],
             metadata: folder.metadata && typeof folder.metadata === 'object' ? folder.metadata : {},
+            documentSettings: folder.documentSettings && typeof folder.documentSettings === 'object'
+                ? {
+                    contextMode: ['manual', 'automatic'].includes(folder.documentSettings.contextMode) ? folder.documentSettings.contextMode : null
+                }
+                : { contextMode: null },
             createdAt: folder.createdAt || now,
             updatedAt: now
         };
@@ -436,7 +462,7 @@ class SealarcaDB {
     async deleteFolder(id) {
         await this.init();
         return new Promise((resolve, reject) => {
-            const tx = this.db.transaction(['folders', 'conversations', 'messages', 'documents', 'documentChunks', 'documentProfiles', 'processingJobs'], 'readwrite');
+            const tx = this.db.transaction(['folders', 'conversations', 'messages', 'documents', 'documentChunks', 'documentProfiles', 'processingJobs', 'operations', 'traces'], 'readwrite');
             let failure = null;
             let missing = false;
             const abortWith = error => {
@@ -465,6 +491,8 @@ class SealarcaDB {
                     const jobs = tx.objectStore('processingJobs');
                     const profiles = tx.objectStore('documentProfiles');
                     const chunks = tx.objectStore('documentChunks');
+                    const operations = tx.objectStore('operations');
+                    const traces = tx.objectStore('traces');
                     const removeIndexedRecords = (index, key) => {
                         const request = index.openCursor(IDBKeyRange.only(key));
                         request.onerror = () => abortWith(request.error || new Error('Suppression en cascade impossible.'));
@@ -501,8 +529,12 @@ class SealarcaDB {
                     const jobsRequest = jobs.index('folderId').getAll(id);
                     jobsRequest.onerror = () => abortWith(jobsRequest.error || new Error('Lecture des jobs impossible.'));
                     jobsRequest.onsuccess = () => jobsRequest.result.forEach(job => jobs.delete(job.id));
+                    const operationsRequest = operations.index('folderId').getAll(id);
+                    operationsRequest.onerror = () => abortWith(operationsRequest.error || new Error('Lecture des opérations impossible.'));
+                    operationsRequest.onsuccess = () => operationsRequest.result.forEach(operation => operations.delete(operation.id));
                     removeIndexedRecords(chunks.index('folderId'), id);
                     removeIndexedRecords(profiles.index('folderId'), id);
+                    removeIndexedRecords(traces.index('folderId'), id);
                     folders.delete(id);
                 };
             };
@@ -556,10 +588,15 @@ class SealarcaDB {
     async deleteConversation(id) {
         await this.init();
         return new Promise((resolve, reject) => {
-            const tx = this.db.transaction(['conversations', 'messages'], 'readwrite');
+            const tx = this.db.transaction(['conversations', 'messages', 'traces'], 'readwrite');
             tx.objectStore('conversations').delete(id);
             const req = tx.objectStore('messages').index('conversationId').openCursor(IDBKeyRange.only(id));
             req.onsuccess = event => {
+                const cursor = event.target.result;
+                if (cursor) { cursor.delete(); cursor.continue(); }
+            };
+            const traces = tx.objectStore('traces').index('conversationId').openCursor(IDBKeyRange.only(id));
+            traces.onsuccess = event => {
                 const cursor = event.target.result;
                 if (cursor) { cursor.delete(); cursor.continue(); }
             };
@@ -576,18 +613,38 @@ class SealarcaDB {
     }
 
     async saveMessage(message) {
+        return this._saveMessage(message, null);
+    }
+
+    async saveMessageWithTrace(message, trace) {
+        if (!trace?.id) throw new Error('Une trace doit avoir un identifiant.');
+        return this._saveMessage(message, trace);
+    }
+
+    async _saveMessage(message, trace = null) {
         await this.init();
-        const value = { ...message, createdAt: message.createdAt || Date.now() };
-        await this._transaction(['conversations', 'messages'], 'readwrite', (tx, setResult, fail) => {
+        const value = { ...message, ...(trace ? { traceId: trace.id } : {}), createdAt: message.createdAt || Date.now() };
+        const stores = trace ? ['conversations', 'messages', 'traces'] : ['conversations', 'messages'];
+        await this._transaction(stores, 'readwrite', (tx, setResult, fail) => {
             if (!value.id || !value.conversationId) { fail(new Error('Identifiant de message ou de conversation manquant.')); return; }
             const conversationRequest = tx.objectStore('conversations').get(value.conversationId);
             conversationRequest.onerror = () => fail(conversationRequest.error || new Error('Lecture de la conversation impossible.'));
             conversationRequest.onsuccess = () => {
                 const conversation = conversationRequest.result;
                 if (!conversation) { fail(new Error('La conversation de ce message n’existe plus.')); return; }
+                if (trace && (trace.folderId !== conversation.folderId || trace.messageId && trace.messageId !== value.id
+                    || trace.conversationId && trace.conversationId !== value.conversationId)) {
+                    fail(new Error('La trace ne correspond pas au dossier et au message.'));
+                    return;
+                }
                 const addRequest = tx.objectStore('messages').add(value);
                 addRequest.onerror = () => fail(addRequest.error || new Error('Enregistrement du message impossible (collision d’identifiant ?).'));
                 addRequest.onsuccess = () => {
+                    if (trace) {
+                        const traceValue = { ...trace, messageId: value.id, conversationId: value.conversationId, createdAt: trace.createdAt || Date.now() };
+                        const traceRequest = tx.objectStore('traces').add(traceValue);
+                        traceRequest.onerror = () => fail(traceRequest.error || new Error('Enregistrement de la trace impossible.'));
+                    }
                     const bumpRequest = tx.objectStore('conversations').put({ ...conversation, updatedAt: Date.now() });
                     bumpRequest.onerror = () => fail(bumpRequest.error || new Error('Actualisation de la conversation impossible.'));
                 };
@@ -595,6 +652,237 @@ class SealarcaDB {
             };
         });
         return value;
+    }
+
+    async getTrace(id) {
+        await this.init();
+        return id ? (await this._request('traces', 'readonly', store => store.get(id))) || null : null;
+    }
+
+    async getTraces(folderId) {
+        await this.init();
+        const traces = folderId
+            ? await this._request('traces', 'readonly', store => store.index('folderId').getAll(folderId))
+            : await this._getAllDirect('traces');
+        return traces.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    }
+
+    async getOperations(folderId) {
+        await this.init();
+        const operations = folderId
+            ? await this._request('operations', 'readonly', store => store.index('folderId').getAll(folderId))
+            : await this._getAllDirect('operations');
+        return operations.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    }
+
+    async getOperation(id) {
+        await this.init();
+        return id ? (await this._request('operations', 'readonly', store => store.get(id))) || null : null;
+    }
+
+    async createOperation(operation) {
+        await this.init();
+        if (!operation?.id || !operation.folderId || !['pending', 'running'].includes(operation.status)) throw new Error('Opération invalide.');
+        const value = { ...operation, createdAt: operation.createdAt || Date.now(), updatedAt: operation.updatedAt || Date.now() };
+        return this._transaction(['folders', 'operations'], 'readwrite', (tx, setResult, fail) => {
+            const folderRequest = tx.objectStore('folders').get(value.folderId);
+            folderRequest.onerror = () => fail(folderRequest.error);
+            folderRequest.onsuccess = () => {
+                if (!folderRequest.result) { fail(new Error('Le dossier de cette opération n’existe plus.')); return; }
+                const request = tx.objectStore('operations').add(value);
+                request.onerror = () => fail(request.error || new Error('Enregistrement de l’opération impossible.'));
+                setResult(value);
+            };
+        });
+    }
+
+    async failPendingOperation(id, notice) {
+        await this.init();
+        const now = Date.now();
+        return this._transaction('operations', 'readwrite', (tx, setResult, fail) => {
+            const store = tx.objectStore('operations');
+            const request = store.get(id);
+            request.onerror = () => fail(request.error);
+            request.onsuccess = () => {
+                const operation = request.result;
+                if (!operation || operation.status !== 'pending') { setResult(false); return; }
+                const value = {
+                    ...operation,
+                    status: 'failed',
+                    notices: [...(operation.notices || []), { ...notice, createdAt: notice?.createdAt || now }],
+                    updatedAt: now,
+                    completedAt: now
+                };
+                const putRequest = store.put(value);
+                putRequest.onerror = () => fail(putRequest.error);
+                setResult(value);
+            };
+        });
+    }
+
+    async claimOperation(id, ownerId, leaseToken, leaseDurationMs = 180000) {
+        await this.init();
+        if (!id || !ownerId || !leaseToken) return false;
+        const now = Date.now();
+        return this._transaction('operations', 'readwrite', (tx, setResult, fail) => {
+            const store = tx.objectStore('operations');
+            const request = store.get(id);
+            request.onerror = () => fail(request.error);
+            request.onsuccess = () => {
+                const operation = request.result;
+                if (!operation || operation.status !== 'pending') { setResult(false); return; }
+                const folderRequest = store.index('folderId').getAll(operation.folderId);
+                folderRequest.onerror = () => fail(folderRequest.error);
+                folderRequest.onsuccess = () => {
+                    const anotherRunning = folderRequest.result.some(item => item.id !== id && item.status === 'running' && Number(item.leaseExpiresAt) > now);
+                    if (anotherRunning) { setResult(false); return; }
+                    const value = {
+                        ...operation,
+                        status: 'running',
+                        startedAt: operation.startedAt || now,
+                        leaseOwner: ownerId,
+                        leaseToken,
+                        leaseExpiresAt: now + Math.max(30000, Number(leaseDurationMs) || 180000),
+                        updatedAt: now
+                    };
+                    const putRequest = store.put(value);
+                    putRequest.onerror = () => fail(putRequest.error);
+                    setResult(value);
+                };
+            };
+        });
+    }
+
+    async updateOperationIfOwner(id, ownerId, leaseToken, changes) {
+        await this.init();
+        const now = Date.now();
+        return this._transaction('operations', 'readwrite', (tx, setResult, fail) => {
+            const store = tx.objectStore('operations');
+            const request = store.get(id);
+            request.onerror = () => fail(request.error);
+            request.onsuccess = () => {
+                const operation = request.result;
+                if (!operation || operation.status !== 'running' || operation.leaseOwner !== ownerId
+                    || operation.leaseToken !== leaseToken || Number(operation.leaseExpiresAt) <= now) {
+                    setResult(false);
+                    return;
+                }
+                const status = changes?.status ?? operation.status;
+                if (status !== 'running' && !['completed', 'partial', 'failed', 'cancelled'].includes(status)) {
+                    fail(new Error('État d’opération invalide.'));
+                    return;
+                }
+                const terminal = status !== 'running';
+                const value = {
+                    ...operation,
+                    ...changes,
+                    ...(terminal ? { leaseOwner: null, leaseToken: null, leaseExpiresAt: null } : { leaseExpiresAt: now + 180000 }),
+                    ...(status === 'cancelled' ? { cancelledAt: now } : {}),
+                    ...(terminal ? { completedAt: now } : {}),
+                    updatedAt: now
+                };
+                const putRequest = store.put(value);
+                putRequest.onerror = () => fail(putRequest.error);
+                setResult(value);
+            };
+        });
+    }
+
+    async renewOperationLease(id, ownerId, leaseToken, leaseDurationMs = 180000) {
+        await this.init();
+        const now = Date.now();
+        return this._transaction('operations', 'readwrite', (tx, setResult, fail) => {
+            const store = tx.objectStore('operations');
+            const request = store.get(id);
+            request.onerror = () => fail(request.error);
+            request.onsuccess = () => {
+                const operation = request.result;
+                if (!operation || operation.status !== 'running' || operation.leaseOwner !== ownerId
+                    || operation.leaseToken !== leaseToken || Number(operation.leaseExpiresAt) <= now) {
+                    setResult(false);
+                    return;
+                }
+                store.put({ ...operation, leaseExpiresAt: now + Math.max(30000, Number(leaseDurationMs) || 180000), updatedAt: now });
+                setResult(true);
+            };
+        });
+    }
+
+    async recoverStaleOperations(now = Date.now()) {
+        await this.init();
+        return this._transaction('operations', 'readwrite', (tx, setResult, fail) => {
+            const store = tx.objectStore('operations');
+            const request = store.index('status').getAll('running');
+            request.onerror = () => fail(request.error);
+            request.onsuccess = () => {
+                let recovered = 0;
+                for (const operation of request.result) {
+                    if (Number(operation.leaseExpiresAt) > now) continue;
+                    const notices = Array.isArray(operation.notices) ? operation.notices : [];
+                    store.put({
+                        ...operation,
+                        status: 'failed',
+                        leaseOwner: null,
+                        leaseToken: null,
+                        leaseExpiresAt: null,
+                        notices: [...notices, { code: 'operation_interrupted', severity: 'warning', recoverable: true, metadata: {}, createdAt: now }],
+                        steps: (operation.steps || []).map(step => step.status === 'running' ? { ...step, status: 'failed', completedAt: now } : step),
+                        updatedAt: now,
+                        completedAt: now
+                    });
+                    recovered += 1;
+                }
+                setResult(recovered);
+            };
+        });
+    }
+
+    async completeLocalOperation({ operationId, ownerId, leaseToken, operationChanges, trace, resultRef }) {
+        await this.init();
+        const now = Date.now();
+        if (!operationId || !trace?.id || !trace.folderId) throw new Error('Résultat local incomplet.');
+        return this._transaction(['operations', 'traces', 'folders'], 'readwrite', (tx, setResult, fail) => {
+            const store = tx.objectStore('operations');
+            const operationRequest = store.get(operationId);
+            const folderRequest = tx.objectStore('folders').get(trace.folderId);
+            let operation;
+            let folder;
+            let remaining = 2;
+            const ready = () => {
+                remaining -= 1;
+                if (remaining) return;
+                if (!operation || operation.status !== 'running' || operation.leaseOwner !== ownerId
+                    || operation.leaseToken !== leaseToken || Number(operation.leaseExpiresAt) <= now) {
+                    setResult(false);
+                    return;
+                }
+                if (!folder || folder.id !== operation.folderId || trace.folderId !== operation.folderId) {
+                    fail(new Error('Le dossier de cette opération n’existe plus.'));
+                    return;
+                }
+                const status = operationChanges?.status;
+                if (!['completed', 'partial'].includes(status)) { fail(new Error('État final d’opération invalide.')); return; }
+                const traceRequest = tx.objectStore('traces').add({ ...trace, operationId, createdAt: trace.createdAt || now });
+                traceRequest.onerror = () => fail(traceRequest.error || new Error('Enregistrement de la trace impossible.'));
+                const value = {
+                    ...operation,
+                    ...operationChanges,
+                    resultRef: { traceId: trace.id, ...(resultRef && typeof resultRef === 'object' ? resultRef : {}) },
+                    leaseOwner: null,
+                    leaseToken: null,
+                    leaseExpiresAt: null,
+                    updatedAt: now,
+                    completedAt: now
+                };
+                const putRequest = store.put(value);
+                putRequest.onerror = () => fail(putRequest.error || new Error('Finalisation de l’opération impossible.'));
+                setResult({ operation: value, trace: { ...trace, operationId, createdAt: trace.createdAt || now } });
+            };
+            operationRequest.onerror = () => fail(operationRequest.error);
+            folderRequest.onerror = () => fail(folderRequest.error);
+            operationRequest.onsuccess = () => { operation = operationRequest.result; ready(); };
+            folderRequest.onsuccess = () => { folder = folderRequest.result; ready(); };
+        });
     }
 
     async getDocuments(folderId) {
@@ -669,7 +957,7 @@ class SealarcaDB {
     async deleteDocument(id) {
         await this.init();
         return new Promise((resolve, reject) => {
-            const tx = this.db.transaction(['documents', 'documentChunks', 'documentProfiles', 'processingJobs'], 'readwrite');
+            const tx = this.db.transaction(['documents', 'documentChunks', 'documentProfiles', 'processingJobs', 'operations'], 'readwrite');
             tx.objectStore('documents').delete(id);
             tx.objectStore('documentProfiles').delete(id);
             const jobReq = tx.objectStore('processingJobs').index('documentId').openCursor(IDBKeyRange.only(id));
@@ -681,6 +969,34 @@ class SealarcaDB {
             req.onsuccess = event => {
                 const cursor = event.target.result;
                 if (cursor) { cursor.delete(); cursor.continue(); }
+            };
+            const operationReq = tx.objectStore('operations').openCursor();
+            operationReq.onsuccess = event => {
+                const cursor = event.target.result;
+                if (!cursor) return;
+                const operation = cursor.value;
+                if ((operation.documentIds || []).includes(id) && ['pending', 'running'].includes(operation.status)) {
+                    const now = Date.now();
+                    cursor.update({
+                        ...operation,
+                        status: 'cancelled',
+                        notices: [...(operation.notices || []), {
+                            code: 'document_deleted',
+                            severity: 'info',
+                            documentId: id,
+                            recoverable: false,
+                            metadata: {},
+                            createdAt: now
+                        }],
+                        updatedAt: now,
+                        completedAt: now,
+                        cancelledAt: now,
+                        leaseOwner: null,
+                        leaseToken: null,
+                        leaseExpiresAt: null
+                    });
+                }
+                cursor.continue();
             };
             tx.oncomplete = () => resolve(true);
             tx.onerror = () => reject(tx.error);
@@ -1125,7 +1441,7 @@ class SealarcaDB {
 
     async exportAllData() {
         await this.init();
-        return this._transaction(['folders', 'conversations', 'messages', 'documents', 'documentChunks', 'documentProfiles', 'processingJobs', 'roles', 'settings'], 'readonly', (tx, setResult, fail) => {
+        return this._transaction(['folders', 'conversations', 'messages', 'documents', 'documentChunks', 'documentProfiles', 'processingJobs', 'operations', 'traces', 'roles', 'settings'], 'readonly', (tx, setResult, fail) => {
             const getAll = (storeName, indexName, key) => new Promise((resolve, reject) => {
                 const target = indexName ? tx.objectStore(storeName).index(indexName) : tx.objectStore(storeName);
                 const request = key !== undefined ? target.getAll(key) : target.getAll();
@@ -1134,19 +1450,19 @@ class SealarcaDB {
             });
             (async () => {
                 try {
-                    const [folders, conversations, documents, chunks, profiles, jobs, roles, settings] = await Promise.all([
+                    const [folders, conversations, documents, chunks, profiles, jobs, operations, traces, roles, settings] = await Promise.all([
                         getAll('folders'), getAll('conversations'), getAll('documents'), getAll('documentChunks'),
-                        getAll('documentProfiles'), getAll('processingJobs'), getAll('roles'), getAll('settings')
+                        getAll('documentProfiles'), getAll('processingJobs'), getAll('operations'), getAll('traces'), getAll('roles'), getAll('settings')
                     ]);
                     const messages = {};
                     for (const conversation of conversations) {
                         messages[conversation.id] = await getAll('messages', 'conversationId', conversation.id);
                     }
                     setResult({
-                        version: '5.0',
+                        version: '6.0',
                         exportedAt: new Date().toISOString(),
                         folders, documents, documentChunks: chunks, documentProfiles: profiles,
-                        processingJobs: jobs, conversations, messages, roles,
+                        processingJobs: jobs, operations, traces, conversations, messages, roles,
                         settings: settings
                             .filter(entry => entry.key !== 'sealarca_api_key')
                             .map(entry => ({ key: entry.key, value: entry.value }))
@@ -1163,6 +1479,8 @@ class SealarcaDB {
         const documents = Array.isArray(data.documents) ? data.documents : [];
         const profiles = Array.isArray(data.documentProfiles) ? data.documentProfiles : [];
         const jobs = Array.isArray(data.processingJobs) ? data.processingJobs : [];
+        const operations = Array.isArray(data.operations) ? data.operations : [];
+        const traces = Array.isArray(data.traces) ? data.traces : [];
         const roles = Array.isArray(data.roles) ? data.roles : [];
         const chunks = Array.isArray(data.documentChunks) ? data.documentChunks : [];
         for (const folder of folders) {
@@ -1173,7 +1491,17 @@ class SealarcaDB {
             const list = data.messages?.[conversation.id];
             if (list !== undefined && !Array.isArray(list)) throw new Error('Messages invalides dans la sauvegarde.');
         }
-        return this._transaction(['folders', 'conversations', 'messages', 'documents', 'documentChunks', 'documentProfiles', 'processingJobs', 'roles', 'settings'], 'readwrite', (tx, setResult, fail) => {
+        for (const operation of operations) {
+            if (!operation?.id || !operation.folderId || !['pending', 'running', 'completed', 'partial', 'failed', 'cancelled'].includes(operation.status)) {
+                throw new Error('Opération invalide dans la sauvegarde.');
+            }
+        }
+        for (const trace of traces) {
+            if (!trace?.id || !trace.folderId || !Array.isArray(trace.documents) || !Array.isArray(trace.sources)) {
+                throw new Error('Trace invalide dans la sauvegarde.');
+            }
+        }
+        return this._transaction(['folders', 'conversations', 'messages', 'documents', 'documentChunks', 'documentProfiles', 'processingJobs', 'operations', 'traces', 'roles', 'settings'], 'readwrite', (tx, setResult, fail) => {
             const putAll = (storeName, values) => {
                 for (const value of values) {
                     const request = tx.objectStore(storeName).put(value);
@@ -1186,6 +1514,8 @@ class SealarcaDB {
                 putAll('documentChunks', chunks);
                 putAll('documentProfiles', profiles);
                 putAll('processingJobs', jobs);
+                putAll('operations', operations);
+                putAll('traces', traces);
                 putAll('conversations', data.conversations);
                 for (const conversation of data.conversations) {
                     const list = data.messages?.[conversation.id];

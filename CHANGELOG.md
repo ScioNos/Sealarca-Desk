@@ -47,6 +47,25 @@ All notable changes to **Sealarca-Desk** are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-09-29
+
+### Added
+
+- Add a multi-document dossier workspace with a source-linked timeline, parties, organizations, amounts, obligations, comparisons, and apparent differences built locally from current document profiles.
+- Add generic persistent operation and notice records with progress steps, cancellation/retry, stale-operation recovery, and metadata-only provenance traces for dossier actions and chat answers.
+- Add per-folder context-mode overrides, document analysis status chips, source-linked profile facts, and expanded `index.md` dossier export.
+- Upgrade IndexedDB to v6 and backup snapshots to format `6.0`; v5 workspaces migrate without deleting or rewriting existing records.
+- Expand document profiles to schema/prompt v2 with sourced named entities, dates, events, amounts, obligations, and items. Existing profiles are marked stale by the new prompt fingerprint and can be regenerated explicitly.
+
+### Safety
+
+- Dossier actions use only profiles already stored locally. Traces retain document/source identifiers, locators, counts, and notices, not source text. Profile generation and chat document context continue to require the user's explicit selection/action.
+- Extracted facts and differences are labeled as unverified and link to source locations for review.
+
+### Verification
+
+- Add coverage for IndexedDB v5-to-v6 migration, operation leases/completion, metadata-only traces, multi-document timeline/comparison provenance, profile v2 normalization, five-language labels, and release metadata.
+
 ## [1.0.2] - 2026-08-31
 
 ### Fixed
