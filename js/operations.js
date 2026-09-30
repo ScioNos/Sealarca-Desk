@@ -80,6 +80,17 @@
         };
     }
 
+    function coverageSnapshot(coverage) {
+        if (!coverage) return null;
+        const result = { status: ['complete', 'partial', 'unknown'].includes(coverage.status) ? coverage.status : 'unknown' };
+        for (const key of ['totalCharacters', 'sentCharacters', 'totalSources', 'representedSources']) {
+            if (Number.isFinite(Number(coverage[key])) && Number(coverage[key]) >= 0) result[key] = Number(coverage[key]);
+        }
+        result.cutSourceIds = (Array.isArray(coverage.cutSourceIds) ? coverage.cutSourceIds : []).filter(id => typeof id === 'string').slice(0, 100);
+        result.reasons = (Array.isArray(coverage.reasons) ? coverage.reasons : []).filter(reason => ['character_limit', 'source_limit', 'source_cut', 'legacy_coverage_unknown'].includes(reason));
+        return result;
+    }
+
     function createTrace({ folderId, conversationId = null, messageId = null, operation = null, manifest = {}, notices = [], model = null, now = Date.now() }) {
         const snapshot = value => value == null ? null : JSON.parse(JSON.stringify(value));
         const documents = (manifest.documents || []).map(item => ({
@@ -89,7 +100,8 @@
             pageCount: Number(item.pageCount) || null,
             included: item.included !== false,
             characterCount: Number(item.characterCount) || 0,
-            sourceIds: [...new Set((item.sourceIds || []).filter(Boolean))]
+            sourceIds: [...new Set((item.sourceIds || []).filter(Boolean))],
+            coverage: coverageSnapshot(item.coverage)
         })).filter(item => item.id);
         const sources = (manifest.sources || []).map(item => ({
             documentId: String(item.documentId || ''),
@@ -146,6 +158,7 @@
         createOperation,
         updateOperationStep,
         createTrace,
+        coverageSnapshot,
         statusKey,
         makeId
     });

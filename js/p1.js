@@ -5,10 +5,28 @@
 (function (global) {
     'use strict';
 
-    const PROFILE_SCHEMA_VERSION = 2;
+    const PROFILE_SCHEMA_VERSION = 3;
     const PROFILE_PROMPT_VERSION = 'document-profile-v2';
     const DEFAULT_MAX_PROFILE_CHARS = 120000;
     const STOP_WORDS = new Set(['alors','avec','avoir','cette','comme','dans','des','elle','elles','entre','est','etait','etre','fait','font','ils','leur','leurs','mais','nous','pour','plus','sans','ses','sont','sur','tout','tous','une','vous','the','and','for','from','that','this','with','und','der','die','das','ein','eine','con','del','los','las','che','per','una']);
+    const SEARCH_CACHE = new Map();
+
+    function cachedNormalization(document) {
+        const key = document.id;
+        const text = String(document.markdown || '');
+        const revision = Number(document.metadata?.extraction?.revision || 0);
+        const cached = SEARCH_CACHE.get(key);
+        if (cached?.text === text && cached.revision === revision) return cached.value;
+        const value = normalizeTextWithOffsets(text);
+        rememberNormalization(document, value);
+        return value;
+    }
+
+    function rememberNormalization(document, value) {
+        SEARCH_CACHE.delete(document.id);
+        SEARCH_CACHE.set(document.id, { text: String(document.markdown || ''), revision: Number(document.metadata?.extraction?.revision || 0), value });
+        while (SEARCH_CACHE.size > 24) SEARCH_CACHE.delete(SEARCH_CACHE.keys().next().value);
+    }
 
     function normalizeText(value) {
         return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -50,14 +68,16 @@
     }
 
     function fingerprintDocument(document) {
-        if (document && document.hash) return 'sha256:' + document.hash + ':' + PROFILE_PROMPT_VERSION;
+        const revision = Number(document?.metadata?.extraction?.revision || 0);
+        const suffix = revision ? ':extraction:' + revision : '';
+        if (document && document.hash) return 'sha256:' + document.hash + ':' + PROFILE_PROMPT_VERSION + suffix;
         const input = String((document && document.markdown) || '');
         let hash = 2166136261;
         for (let index = 0; index < input.length; index++) {
             hash ^= input.charCodeAt(index);
             hash = Math.imul(hash, 16777619);
         }
-        return 'fnv1a:' + (hash >>> 0).toString(16) + ':' + input.length + ':' + PROFILE_PROMPT_VERSION;
+        return 'fnv1a:' + (hash >>> 0).toString(16) + ':' + input.length + ':' + PROFILE_PROMPT_VERSION + suffix;
     }
 
     function locatorText(locator) {
@@ -75,6 +95,7 @@
             return locator.type.replace('docx-', '');
         }
         if (locator.type === 'odf-paragraph' && locator.paragraph) return 'bloc ' + locator.paragraph;
+        if (locator.type === 'odf-table' && locator.table) return 'tableau ' + locator.table;
         if (locator.sheet) return 'feuille ' + locator.sheet;
         return '';
     }
@@ -90,11 +111,11 @@
         return (((document && document.sourceMap) || []).find(source => position >= Number(source.markdownStart || 0) && position < Number(source.markdownEnd || 0))) || null;
     }
 
-    function excerptAround(markdown, position, radius) {
+    function excerptAround(markdown, position, radius, source = null) {
         const text = String(markdown || '');
         const width = Number(radius) || 180;
-        const start = Math.max(0, position - width);
-        const end = Math.min(text.length, position + width);
+        const start = Math.max(Number(source?.markdownStart || 0), position - width);
+        const end = Math.min(source ? Number(source.markdownEnd) : text.length, position + width);
         let excerpt = text.slice(start, end).replace(/\s+/g, ' ').trim();
         if (start > 0) excerpt = '…' + excerpt;
         if (end < text.length) excerpt += '…';
@@ -110,7 +131,7 @@
         const results = [];
         for (const document of documents || []) {
             const markdown = String((document && document.markdown) || '');
-            const normalized = normalizeTextWithOffsets(markdown);
+            const normalized = cachedNormalization(document);
             const haystack = normalized.normalized;
             const title = normalizeText((document && document.name) || '');
             const candidates = [];
@@ -143,7 +164,7 @@
                     documentName: document.name,
                     score: coverage * 12 + Math.min(candidate.occurrences, 8) + titleMatches * 4,
                     matchedTerms: Array.from(candidate.matchedTerms),
-                    excerpt: excerptAround(markdown, candidate.position),
+                    excerpt: excerptAround(markdown, candidate.position, 180, candidate.source),
                     sourceId: (candidate.source && candidate.source.id) || null,
                     source: candidate.source || null,
                     reference: candidate.source ? sourceReference(document, candidate.source) : document.name
@@ -183,14 +204,105 @@
         })).filter(item => item.excerpt);
     }
 
+    // Only local document text enters this worker; it never receives credentials or originals.
+    class SearchService {
+        constructor() {
+            this.worker = null;
+            this.pending = new Map();
+            this.sequence = 0;
+            this.destroyed = false;
+            try {
+                const functions = [normalizeText, normalizeTextWithOffsets, cachedNormalization, rememberNormalization,
+                    tokenize, locatorText, sourceReference, sourceForOffset, excerptAround, localSearch, citableExcerpts];
+                const source = `'use strict';const STOP_WORDS=new Set(${JSON.stringify([...STOP_WORDS])});const SEARCH_CACHE=new Map();`
+                    + functions.map(fn => fn.toString()).join('\n')
+                    + `onmessage=({data})=>{try{if(data.invalidate){SEARCH_CACHE.delete(data.invalidate);return;}
+                        const results=data.excerpts?data.documents.map(document=>[document.id,citableExcerpts(document,data.query,data.options)]):localSearch(data.documents,data.query,data.options);
+                        postMessage({id:data.id,results});}catch(error){postMessage({id:data.id,error:String(error.message||error)});}};`;
+                const url = global.URL.createObjectURL(new global.Blob([source], { type: 'text/javascript' }));
+                try { this.worker = new global.Worker(url); } finally { global.URL.revokeObjectURL(url); }
+                this.worker.onmessage = ({ data }) => {
+                    const pending = this.pending.get(data.id); if (!pending) return;
+                    this.pending.delete(data.id);
+                    if (data.error) pending.reject(new Error(data.error)); else pending.resolve(data.results);
+                };
+                this.worker.onerror = () => {
+                    this.worker?.terminate(); this.worker = null;
+                    for (const pending of this.pending.values()) pending.reject(new Error('worker_unavailable'));
+                    this.pending.clear();
+                };
+            } catch (_) { this.worker = null; }
+        }
+        async execute(documents, query, options, excerpts = false) {
+            if (this.destroyed) return [];
+            const plain = documents.map(document => ({ id: document.id, name: document.name, markdown: document.markdown,
+                sourceMap: JSON.parse(JSON.stringify(document.sourceMap || [])), metadata: { extraction: { revision: document.metadata?.extraction?.revision || 0 } } }));
+            if (this.worker) {
+                try {
+                    return await new Promise((resolve, reject) => {
+                        const id = ++this.sequence;
+                        this.pending.set(id, { resolve, reject });
+                        try { this.worker.postMessage({ id, documents: plain, query, options, excerpts }); }
+                        catch (error) { this.pending.delete(id); reject(error); }
+                    });
+                } catch (_) { /* CSP/browser failure: use cooperative local batches. */ }
+            }
+            for (const document of plain) {
+                if (this.destroyed) return [];
+                const cached = SEARCH_CACHE.get(document.id);
+                if (cached?.text === document.markdown && cached.revision === Number(document.metadata.extraction.revision)) continue;
+                const text = String(document.markdown || '');
+                const parts = [], offsets = [];
+                for (let start = 0; start < text.length;) {
+                    let end = Math.min(text.length, start + 16000);
+                    if (end < text.length && /[\uD800-\uDBFF]/.test(text[end - 1])) end -= 1;
+                    const batch = normalizeTextWithOffsets(text.slice(start, end));
+                    parts.push(batch.normalized);
+                    for (let index = 0; index < batch.offsets.length - 1; index++) offsets.push(start + batch.offsets[index]);
+                    start = end;
+                    await new Promise(resolve => setTimeout(resolve, 0));
+                    if (this.destroyed) return [];
+                }
+                offsets.push(text.length);
+                rememberNormalization(document, { normalized: parts.join(''), offsets });
+            }
+            return excerpts ? plain.map(document => [document.id, citableExcerpts(document, query, options)]) : localSearch(plain, query, options);
+        }
+        search(documents, query, options) { return this.execute(documents, query, options); }
+        async select(documents, query, options = {}) {
+            const limit = Math.max(1, Number(options.limit) || 5);
+            const results = await this.search(documents, query, { maxResults: Math.max(limit * 5, 20), perDocument: 4 });
+            const scores = new Map();
+            for (const result of results) scores.set(result.documentId, (scores.get(result.documentId) || 0) + result.score);
+            return documents.map(document => ({ document, score: scores.get(document.id) || 0 }))
+                .filter(item => item.score > 0).sort((a, b) => b.score - a.score).slice(0, limit);
+        }
+        async excerpts(documents, query, options) { return new Map(await this.execute(documents, query, options, true)); }
+        invalidate(id) { SEARCH_CACHE.delete(id); this.worker?.postMessage({ invalidate: id }); }
+        destroy() {
+            this.destroyed = true;
+            this.worker?.terminate(); this.worker = null;
+            for (const pending of this.pending.values()) pending.resolve([]);
+            this.pending.clear(); SEARCH_CACHE.clear();
+        }
+    }
+
     function buildProfileRequest(document, maxChars) {
         const markdown = String((document && document.markdown) || '');
         const limit = Math.max(0, Number(maxChars) || DEFAULT_MAX_PROFILE_CHARS);
         const sentMarkdown = markdown.slice(0, limit);
-        const sourceMap = ((document && document.sourceMap) || []).filter(source => source && source.id
+        const allSources = (document && document.sourceMap) || [];
+        const sourceMap = allSources.filter(source => source && source.id
             && Number(source.markdownStart || 0) < sentMarkdown.length
-            && Number(source.markdownEnd || 0) > 0).slice(0, 100);
-        const truncatedSources = ((document && document.sourceMap) || []).length > sourceMap.length;
+            && Number(source.markdownEnd || 0) > 0).slice(0, 100).map(source => ({ ...source, markdownEnd: Math.min(Number(source.markdownEnd), sentMarkdown.length) }));
+        const cutSourceIds = allSources.filter(source => sourceMap.some(sent => sent.id === source.id) && Number(source.markdownEnd) > sentMarkdown.length).map(source => source.id);
+        const truncatedSources = allSources.length > sourceMap.length || cutSourceIds.length > 0;
+        const reasons = [];
+        if (sentMarkdown.length < markdown.length) reasons.push('character_limit');
+        if (allSources.length > sourceMap.length) reasons.push('source_limit');
+        if (cutSourceIds.length) reasons.push('source_cut');
+        const coverage = { status: reasons.length ? 'partial' : 'complete', totalCharacters: markdown.length, sentCharacters: sentMarkdown.length,
+            totalSources: allSources.length, representedSources: sourceMap.length, cutSourceIds, reasons };
         const sources = sourceMap.map(source => ({ id: source.id, reference: sourceReference(document, source) }));
         const prompt = [
             'Analyse le document Markdown ci-dessous et retourne uniquement un objet JSON valide.',
@@ -203,7 +315,7 @@
             'MARKDOWN:',
             sentMarkdown
         ].join('\n\n');
-        return { prompt, sourceMap, sentMarkdown, truncatedSources };
+        return { prompt, sourceMap, sentMarkdown, truncatedSources, coverage };
     }
 
     function buildProfilePrompt(document, maxChars) {
@@ -219,7 +331,7 @@
         return JSON.parse(raw.slice(start, end + 1));
     }
 
-    function normalizeProfile(rawProfile, document, inputFingerprint, allowedSourceMap = null) {
+    function normalizeProfile(rawProfile, document, inputFingerprint, allowedSourceMap = null, coverage = null) {
         const raw = rawProfile && typeof rawProfile === 'object' ? rawProfile : {};
         const sourceMap = Array.isArray(allowedSourceMap) ? allowedSourceMap
             : (Array.isArray(document && document.sourceMap) ? document.sourceMap : []);
@@ -260,6 +372,8 @@
             inputFingerprint,
             schemaVersion: PROFILE_SCHEMA_VERSION,
             status: 'valid',
+            extractionRevision: Number(document.metadata?.extraction?.revision || 0),
+            coverage: coverage ? JSON.parse(JSON.stringify(coverage)) : { status: 'unknown', reasons: ['legacy_coverage_unknown'] },
             documentType: String(raw.documentType || raw.type || document.extension || 'document').trim(),
             summary: String(raw.summary || raw.resume || '').trim(),
             people,
@@ -277,8 +391,8 @@
         };
     }
 
-    function extractProfile(text, document, fingerprint, allowedSourceMap = null) {
-        return normalizeProfile(parseJsonObject(text), document, fingerprint, allowedSourceMap);
+    function extractProfile(text, document, fingerprint, allowedSourceMap = null, coverage = null) {
+        return normalizeProfile(parseJsonObject(text), document, fingerprint, allowedSourceMap, coverage);
     }
 
     function extractCitations(text, documents) {
@@ -294,10 +408,8 @@
     }
 
     function isRetryableError(error) {
-        if (!error || error.name === 'AbortError') return false;
-        if (error.retryable === true) return true;
-        if ([408, 425, 429, 500, 502, 503, 504].includes(Number(error.status))) return true;
-        return /network|fetch|timeout|tempor|réseau|connexion/i.test(String(error.message || ''));
+        return Boolean(error && error.name !== 'AbortError' && error.kind !== 'outcome_unknown'
+            && Number(error.status) && (error.retryable === true || [408, 425, 429, 500, 502, 503, 504].includes(Number(error.status))));
     }
 
     function backoffDelay(attempt, retryAfterMs) {
@@ -318,11 +430,12 @@
             this.heartbeatIntervalMs = 30000;
             this.timer = null;
             this.started = false;
+            this.pumping = null;
+            this.lastRecoveryAt = 0;
         }
         async start() {
             if (this.started) return;
             this.started = true;
-            await this.db.recoverInterruptedJobs();
             await this.pump();
         }
         stop() {
@@ -334,8 +447,9 @@
         async enqueueDocument(document) {
             const inputFingerprint = fingerprintDocument(document);
             const profile = await this.db.getDocumentProfile(document.id);
-            if (profile && profile.status === 'valid' && profile.inputFingerprint === inputFingerprint) return { skipped: true, profile };
-            const job = await this.db.enqueueProcessingJob({ type: 'document-profile', documentId: document.id, folderId: document.folderId, inputFingerprint, maxAttempts: 5 });
+            if (profile && profile.status === 'valid' && profile.inputFingerprint === inputFingerprint && profile.coverage?.status !== 'unknown' && profile.coverage) return { skipped: true, profile };
+            const job = await this.db.enqueueProcessingJob({ type: 'document-profile', documentId: document.id, folderId: document.folderId, inputFingerprint,
+                extractionRevision: Number(document.metadata?.extraction?.revision || 0), regenerate: Boolean(profile && (!profile.coverage || profile.coverage.status === 'unknown')), maxAttempts: 5 });
             this.schedule(0);
             return { skipped: false, job };
         }
@@ -348,7 +462,7 @@
             const job = await this.db.cancelProcessingJob(jobId);
             const running = this.running.get(jobId);
             if (job && running) running.controller.abort('cancelled');
-            await this.notify();
+            if (job) await this.notify(job);
         }
         abortJobsForDocument(documentId, reason = 'document_deleted') {
             if (!documentId) return [];
@@ -386,23 +500,34 @@
         }
         async retry(jobId) {
             const job = await this.db.retryProcessingJob(jobId);
-            if (job) this.schedule(0);
+            if (job) { await this.notify(job); this.schedule(0); }
         }
         schedule(delay) {
             if (!this.started) return;
             clearTimeout(this.timer);
             this.timer = setTimeout(() => this.pump().catch(error => console.error('Queue P1:', error)), Math.max(0, Number(delay) || 0));
         }
-        async notify() {
-            try { await this.onChange(); } catch (error) { console.error('Actualisation queue impossible:', error); }
+        async notify(job, domains = ['jobs']) {
+            try { await this.onChange({ folderId: job?.folderId || null, domains }); } catch (error) { console.error('Actualisation queue impossible:', error); }
         }
         async pump() {
+            if (!this.started) return;
+            if (this.pumping) return this.pumping;
+            this.pumping = this.pumpOnce();
+            try { await this.pumping; } finally { this.pumping = null; }
+        }
+        async pumpOnce() {
+            if (Date.now() - this.lastRecoveryAt >= 30000) {
+                this.lastRecoveryAt = Date.now();
+                if (await this.db.recoverInterruptedJobs()) await this.notify(null);
+            }
             if (!this.started) return;
             const available = this.concurrency - this.running.size;
             if (available <= 0) { this.schedule(500); return; }
             const jobs = await this.db.claimRunnableProcessingJobs(Date.now(), available, this.ownerId, this.leaseDurationMs);
-            for (const job of jobs) this.run(job);
-            await this.notify();
+            if (!this.started) return;
+            for (const job of jobs) this.run(job).catch(error => console.error('Job P1:', error));
+            for (const job of jobs) await this.notify(job);
             this.schedule(jobs.length ? 250 : 1500);
         }
         async run(job) {
@@ -422,12 +547,11 @@
                 } finally { heartbeatBusy = false; }
             }, this.heartbeatIntervalMs);
             try {
-                await this.notify();
                 const document = await this.db.getDocument(job.documentId);
                 if (!document) throw Object.assign(new Error('Document introuvable.'), { retryable: false });
                 const currentFingerprint = fingerprintDocument(document);
                 const existing = await this.db.getDocumentProfile(document.id);
-                if (existing && existing.status === 'valid' && existing.inputFingerprint === currentFingerprint) {
+                if (!job.regenerate && existing && existing.status === 'valid' && existing.inputFingerprint === currentFingerprint) {
                     await this.db.updateProcessingJobIfOwner(job.id, this.ownerId, leaseToken, {
                         status: 'completed', attempts: attempt, completedAt: Date.now(),
                         checkpoint: { stage: 'deduplicated', at: Date.now() }
@@ -435,11 +559,10 @@
                     return;
                 }
                 if (currentFingerprint !== job.inputFingerprint) {
-                    const stale = await this.db.updateProcessingJobIfOwner(job.id, this.ownerId, leaseToken, {
+                    await this.db.updateProcessingJobIfOwner(job.id, this.ownerId, leaseToken, {
                         status: 'cancelled', attempts: attempt, lastError: 'Le document a changé.',
                         checkpoint: { stage: 'stale_input', at: Date.now() }
                     });
-                    if (stale) await this.enqueueDocument(document);
                     return;
                 }
                 const credentials = this.getCredentials() || {};
@@ -451,6 +574,11 @@
                     return;
                 }
                 const request = buildProfileRequest(document);
+                if (controller.signal.aborted) return;
+                const dispatched = await this.db.updateProcessingJobIfOwner(job.id, this.ownerId, leaseToken, {
+                    checkpoint: { stage: 'request_dispatched', at: Date.now() }
+                });
+                if (!dispatched || controller.signal.aborted) return;
                 const timeoutMs = 120000;
                 const timeoutController = new AbortController();
                 const timeoutId = setTimeout(() => timeoutController.abort('timeout'), timeoutMs);
@@ -466,10 +594,11 @@
                     clearTimeout(timeoutId);
                     controller.signal.removeEventListener?.('abort', forwardAbort);
                 }
-                const profile = extractProfile(response.text, document, currentFingerprint, request.sourceMap);
+                const profile = extractProfile(response.text, document, currentFingerprint, request.sourceMap, request.coverage);
                 await this.db.saveDocumentProfileIfJobOwner(profile, job.id, this.ownerId, leaseToken);
             } catch (error) {
                 if (!controller.signal.aborted) {
+                    const errorKind = error.kind || (error.name === 'AbortError' ? 'cancelled' : Number(error.status) ? 'http' : error instanceof TypeError ? 'outcome_unknown' : 'definitive');
                     const retryable = isRetryableError(error);
                     const exhausted = attempt >= Number(job.maxAttempts || 5);
                     const status = retryable && !exhausted ? 'pending' : 'failed';
@@ -477,17 +606,18 @@
                     await this.db.updateProcessingJobIfOwner(job.id, this.ownerId, leaseToken, {
                         status, attempts: attempt, nextRunAt: status === 'pending' ? Date.now() + delay : null,
                         lastError: String(error.message || error),
-                        checkpoint: { stage: status === 'pending' ? 'retry_scheduled' : 'failed', attempt, retryInMs: delay, at: Date.now() }
+                        errorKind,
+                        checkpoint: { stage: errorKind === 'outcome_unknown' ? 'outcome_unknown' : status === 'pending' ? 'retry_scheduled' : 'failed', attempt, retryInMs: delay, at: Date.now() }
                     });
                 }
             } finally {
                 clearInterval(heartbeat);
                 this.running.delete(job.id);
-                await this.notify();
+                await this.notify(job, ['jobs', 'profiles']);
                 this.schedule(0);
             }
         }
     }
 
-    global.SealarcaP1 = { PROFILE_SCHEMA_VERSION, PROFILE_PROMPT_VERSION, normalizeText, tokenize, fingerprintDocument, locatorText, sourceReference, sourceForOffset, localSearch, selectRelevantDocuments, citableExcerpts, buildProfileRequest, buildProfilePrompt, extractProfile, normalizeProfile, extractCitations, isRetryableError, backoffDelay, PersistentJobQueue };
+    global.SealarcaP1 = { PROFILE_SCHEMA_VERSION, PROFILE_PROMPT_VERSION, normalizeText, tokenize, fingerprintDocument, locatorText, sourceReference, sourceForOffset, localSearch, selectRelevantDocuments, citableExcerpts, SearchService, buildProfileRequest, buildProfilePrompt, extractProfile, normalizeProfile, extractCitations, isRetryableError, backoffDelay, PersistentJobQueue };
 })(typeof window !== 'undefined' ? window : globalThis);

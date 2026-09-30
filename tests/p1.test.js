@@ -12,6 +12,80 @@ function loadP1() {
     return context.window.SealarcaP1;
 }
 
+test('couverture v3 : limites exactes, source coupée, sources omises et fiche historique', () => {
+    const p1 = loadP1();
+    const document = { id: 'coverage', folderId: 'folder', hash: 'original', markdown: 'x'.repeat(120000), sourceMap: [{ id: 'all', markdownStart: 0, markdownEnd: 120000 }] };
+    assert.equal(p1.buildProfileRequest(document).coverage.status, 'complete');
+    document.markdown += 'x'; document.sourceMap[0].markdownEnd++;
+    const request = p1.buildProfileRequest(document);
+    assert.equal(request.coverage.status, 'partial');
+    assert.equal(request.coverage.sentCharacters, 120000);
+    assert.equal(request.coverage.totalCharacters, 120001);
+    assert.deepEqual(Array.from(request.coverage.cutSourceIds), ['all']);
+    assert.equal(request.sourceMap[0].markdownEnd, 120000);
+    const profile = p1.extractProfile('{"summary":"test"}', document, 'fp', request.sourceMap, request.coverage);
+    assert.equal(profile.status, 'valid'); assert.equal(profile.coverage.status, 'partial');
+    assert.equal(p1.extractProfile('{}', document, 'fp').coverage.status, 'unknown');
+    document.markdown = 'x'.repeat(101);
+    document.sourceMap = Array.from({ length: 101 }, (_, i) => ({ id: String(i), markdownStart: i, markdownEnd: i + 1 }));
+    assert.equal(p1.buildProfileRequest(document).coverage.representedSources, 100);
+    assert.equal(p1.buildProfileRequest(document).coverage.totalSources, 101);
+    const fingerprint = p1.fingerprintDocument(document);
+    document.metadata = { extraction: { revision: 1 } };
+    assert.notEqual(p1.fingerprintDocument(document), fingerprint);
+});
+
+test('extraits bornés : aucun texte de la source voisine sous une mauvaise référence', () => {
+    const p1 = loadP1();
+    const document = { id: 'bounds', name: 'pages.pdf', markdown: 'mot cible\nSECRET PAGE DEUX', sourceMap: [
+        { id: 'p1', markdownStart: 0, markdownEnd: 9, locator: { type: 'pdf-page', page: 1 } },
+        { id: 'p2', markdownStart: 9, markdownEnd: 25, locator: { type: 'pdf-page', page: 2 } }
+    ] };
+    const [result] = p1.citableExcerpts(document, 'cible');
+    assert.equal(result.sourceId, 'p1'); assert.doesNotMatch(result.excerpt, /SECRET/);
+    assert.match(result.reference, /p\. 1/);
+});
+
+test('recherche coopérative sur 20 × 500 000 caractères : timer réactif et cache réutilisé', async () => {
+    const p1 = loadP1(), service = new p1.SearchService();
+    const documents = Array.from({ length: 20 }, (_, i) => ({ id: 'large-' + i, name: 'large-' + i, markdown: 'e'.repeat(499980) + ' résiliation contrat' }));
+    let ticks = 0; const timer = setInterval(() => ticks++, 5);
+    try {
+        const first = await service.search(documents, 'résiliation', { maxResults: 30 });
+        assert.equal(first.length, 20); assert.ok(ticks > 10);
+        const start = performance.now();
+        const second = await service.search(documents, 'contrat', { maxResults: 30 });
+        assert.equal(second.length, 20); assert.ok(performance.now() - start < 250);
+        documents[0].markdown = 'Texte remplacé'; service.invalidate(documents[0].id);
+        assert.equal((await service.search(documents, 'résiliation', { maxResults: 30 })).length, 19);
+    } finally { clearInterval(timer); service.destroy(); }
+});
+
+test('pompe sérialisée et inactive : aucun événement documentaire, récupération périodique', async () => {
+    const p1 = loadP1(); let claims = 0, recoveries = 0, changes = 0, release;
+    const gate = new Promise(resolve => { release = resolve; });
+    const queue = new p1.PersistentJobQueue({ db: {
+        async recoverInterruptedJobs() { recoveries++; return 0; },
+        async claimRunnableProcessingJobs() { claims++; await gate; return []; }
+    }, api: {}, getCredentials: () => ({}), onChange: () => changes++ });
+    queue.started = true;
+    const first = queue.pump(), second = queue.pump(); release(); await Promise.all([first, second]);
+    assert.equal(claims, 1); assert.equal(changes, 0); assert.equal(recoveries, 1);
+    queue.lastRecoveryAt = Date.now() - 30001; await queue.pump(); assert.equal(recoveries, 2);
+    queue.stop(); assert.equal(queue.timer, null);
+});
+
+test('résultat réseau indéterminé : job failed sans reprise automatique', async () => {
+    const p1 = loadP1(), document = sampleDocuments()[0]; let saved;
+    const queue = new p1.PersistentJobQueue({ db: {
+        async getDocument() { return document; }, async getDocumentProfile() { return null; },
+        async updateProcessingJobIfOwner(id, owner, token, changes) { saved = changes; return true; }
+    }, api: { async completeResponse() { throw Object.assign(new Error('Failed to fetch'), { kind: 'outcome_unknown' }); } },
+    getCredentials: () => ({ apiKey: 'verified', model: 'model' }) });
+    await queue.run({ id: 'ambiguous', documentId: document.id, inputFingerprint: p1.fingerprintDocument(document), attempts: 1 });
+    assert.equal(saved.status, 'failed'); assert.equal(saved.nextRunAt, null); assert.equal(saved.errorKind, 'outcome_unknown');
+});
+
 function sampleDocuments() {
     return [
         {
@@ -77,7 +151,7 @@ test('le schéma de fiche v2 garde entités, montants, événements et obligatio
         events: [{ date: '2025-01-14', label: 'Résiliation', details: 'Fin du contrat', sourceIds: ['page_21'] }],
         obligations: [{ label: 'Notifier', details: 'Par écrit', deadline: '2025-01-14', sourceIds: ['page_21'] }]
     }, document, p1.fingerprintDocument(document));
-    assert.equal(p1.PROFILE_SCHEMA_VERSION, 2);
+    assert.equal(p1.PROFILE_SCHEMA_VERSION, 3);
     assert.equal(p1.PROFILE_PROMPT_VERSION, 'document-profile-v2');
     assert.deepEqual(Array.from(profile.people), ['Alice Dupont']);
     assert.deepEqual(Array.from(profile.entities[0].sourceIds), ['page_21']);
@@ -124,7 +198,7 @@ test('la recherche sur accents combinés retrouve le bon offset et la bonne sour
 test('le backoff couvre 429 et erreurs réseau sans accélération incontrôlée', () => {
     const p1 = loadP1();
     assert.equal(p1.isRetryableError({ status: 429 }), true);
-    assert.equal(p1.isRetryableError(new Error('Network fetch failed')), true);
+    assert.equal(p1.isRetryableError(new Error('Network fetch failed')), false);
     assert.equal(p1.isRetryableError({ name: 'AbortError' }), false);
     assert.equal(p1.backoffDelay(1), 1000);
     assert.equal(p1.backoffDelay(4), 8000);
@@ -150,7 +224,7 @@ test('la queue termine une fiche et évite de recalculer une fiche valide', asyn
         async updateProcessingJobIfOwner(id, owner, token, changes) {
             const job = jobs.get(id);
             if (!job || job.status !== 'running' || job.leaseOwner !== owner || job.leaseToken !== token) return false;
-            jobs.set(id, { ...job, ...changes, leaseOwner: null, leaseToken: null });
+            jobs.set(id, { ...job, ...changes, ...(changes.status && changes.status !== 'running' ? { leaseOwner: null, leaseToken: null } : {}) });
             return true;
         }
     };
@@ -181,7 +255,7 @@ test('la queue checkpoint une limitation 429 et la reprogramme', async () => {
         async updateProcessingJobIfOwner(id, owner, token, changes) {
             const job = jobs.get(id);
             if (!job || job.status !== 'running' || job.leaseOwner !== owner || job.leaseToken !== token) return false;
-            jobs.set(id, { ...job, ...changes, leaseOwner: null, leaseToken: null });
+            jobs.set(id, { ...job, ...changes, ...(changes.status && changes.status !== 'running' ? { leaseOwner: null, leaseToken: null } : {}) });
             return true;
         }
     };

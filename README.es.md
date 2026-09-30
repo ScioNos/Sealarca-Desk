@@ -2,6 +2,8 @@
 
 # 🛡️ Sealarca-Desk
 
+Las fichas v3 distinguen validez y cobertura completa, parcial o desconocida. Los análisis con cobertura parcial o desconocida siguen siendo parciales. Las antiguas extracciones XLSX/ODT se reparan explícitamente y de forma local desde el original: identidad e historial conservados, ficha anterior desactualizada y ninguna llamada IA automática. La búsqueda usa un worker local y caché, con alternativa cooperativa y espera de 150 ms. Las solicitudes POST con resultado de red indeterminado requieren un reintento explícito; solo las preparaciones no enviadas se reanudan automáticamente. IndexedDB permanece en v6.
+
 **Cliente de navegador local autónomo para la pasarela de IA suiza [Sealarca](https://sealarca.ch)**  
 *Preparación local de documentos, selección explícita del contexto y acceso directo al Vault.*
 

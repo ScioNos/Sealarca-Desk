@@ -279,13 +279,15 @@ class SealarcaDB {
                         if (!cursor) return;
                         const job = cursor.value;
                         if (job.status === 'running') {
-                            job.status = 'pending';
-                            job.nextRunAt = now;
+                            job.status = 'failed';
+                            job.errorKind = 'outcome_unknown';
+                            job.lastError = 'Résultat réseau indéterminé : une relance peut répéter la requête.';
+                            job.nextRunAt = null;
                             job.startedAt = null;
                             job.leaseOwner = null;
                             job.leaseToken = null;
                             job.leaseExpiresAt = null;
-                            job.checkpoint = { stage: 'recovered_after_v4', previous: job.checkpoint || null, at: now };
+                            job.checkpoint = { stage: 'recovered_after_v4', outcome: 'outcome_unknown', previous: job.checkpoint || null, at: now };
                             const updateRequest = cursor.update(job);
                             updateRequest.onerror = () => { try { request.transaction.abort(); } catch (_) {} };
                         }
@@ -954,6 +956,49 @@ class SealarcaDB {
         return value;
     }
 
+    async replaceDocumentExtraction(id, parsed, expectedRevision = 0) {
+        await this.init();
+        return this._transaction(['documents', 'documentProfiles', 'documentChunks', 'processingJobs', 'operations'], 'readwrite', (tx, setResult, fail) => {
+            const request = tx.objectStore('documents').get(id);
+            request.onerror = () => fail(request.error);
+            request.onsuccess = () => {
+                const current = request.result;
+                if (!current || Number(current.metadata?.extraction?.revision || 0) !== expectedRevision) {
+                    fail(new Error('Le document a été supprimé ou modifié pendant la réextraction.')); return;
+                }
+                const now = Date.now();
+                const value = { ...current, markdown: parsed.markdown, sourceMap: parsed.sourceMap, sourceMapVersion: parsed.sourceMapVersion,
+                    metadata: { ...current.metadata, ...parsed.metadata, extraction: { ...parsed.metadata.extraction, revision: expectedRevision + 1 } },
+                    derivations: { chunks: { status: 'not_generated', source: 'markdown' } }, updatedAt: now };
+                tx.objectStore('documents').put(value);
+                const profileRequest = tx.objectStore('documentProfiles').get(id);
+                profileRequest.onsuccess = () => {
+                    if (profileRequest.result) tx.objectStore('documentProfiles').put({ ...profileRequest.result, status: 'stale', updatedAt: now });
+                };
+                const chunks = tx.objectStore('documentChunks').index('documentId').openCursor(IDBKeyRange.only(id));
+                chunks.onsuccess = () => { const cursor = chunks.result; if (cursor) { cursor.delete(); cursor.continue(); } };
+                const jobs = tx.objectStore('processingJobs').index('documentId').openCursor(IDBKeyRange.only(id));
+                jobs.onsuccess = () => {
+                    const cursor = jobs.result;
+                    if (!cursor) return;
+                    if (['pending', 'running'].includes(cursor.value.status)) cursor.update({ ...cursor.value, status: 'cancelled', leaseOwner: null, leaseToken: null, leaseExpiresAt: null,
+                        checkpoint: { stage: 'extraction_replaced', at: now }, updatedAt: now });
+                    cursor.continue();
+                };
+                const operations = tx.objectStore('operations').index('folderId').openCursor(IDBKeyRange.only(current.folderId));
+                operations.onsuccess = () => {
+                    const cursor = operations.result;
+                    if (!cursor) return;
+                    if (['pending', 'running'].includes(cursor.value.status) && cursor.value.documentIds?.includes(id)) cursor.update({ ...cursor.value, status: 'cancelled',
+                        steps: (cursor.value.steps || []).map(step => step.status === 'running' ? { ...step, status: 'cancelled', completedAt: now } : step),
+                        leaseOwner: null, leaseToken: null, leaseExpiresAt: null, cancelledAt: now, completedAt: now, updatedAt: now });
+                    cursor.continue();
+                };
+                setResult(value);
+            };
+        });
+    }
+
     async deleteDocument(id) {
         await this.init();
         return new Promise((resolve, reject) => {
@@ -1138,6 +1183,10 @@ class SealarcaDB {
                     setResult(false);
                     return;
                 }
+                if (Number(value.schemaVersion) >= 3 && (value.inputFingerprint !== jobRecord.inputFingerprint
+                    || Number(value.extractionRevision || 0) !== Number(documentRecord.metadata?.extraction?.revision || 0))) {
+                    setResult(false); return;
+                }
                 tx.objectStore('documentProfiles').put(value);
                 jobs.put({
                     ...jobRecord,
@@ -1279,7 +1328,7 @@ class SealarcaDB {
                         leaseOwner: ownerId,
                         leaseToken: `${ownerId}:${now}:${Math.random().toString(36).slice(2, 12)}`,
                         leaseExpiresAt: leaseUntil,
-                        checkpoint: { stage: 'request_started', attempt, at: now },
+                        checkpoint: { stage: 'preparing', attempt, at: now },
                         updatedAt: now
                     };
                     store.put(value);
@@ -1368,7 +1417,7 @@ class SealarcaDB {
             request.onsuccess = () => {
                 const job = request.result;
                 if (!job || !['failed', 'cancelled'].includes(job.status)) { setResult(null); return; }
-                const value = { ...job, status: 'pending', attempts: 0, nextRunAt: now, lastError: null,
+                const value = { ...job, status: 'pending', attempts: 0, nextRunAt: now, lastError: null, errorKind: null,
                     leaseOwner: null, leaseToken: null, leaseExpiresAt: null,
                     checkpoint: { stage: 'queued_again', at: now }, updatedAt: now };
                 store.put(value);
@@ -1397,6 +1446,13 @@ class SealarcaDB {
                 let recovered = 0;
                 for (const job of request.result) {
                     if (Number(job.leaseExpiresAt) > now) continue;
+                    recovered += 1;
+                    if (job.checkpoint?.stage !== 'preparing') {
+                        store.put({ ...job, status: 'failed', nextRunAt: null, leaseOwner: null, leaseToken: null,
+                            leaseExpiresAt: null, errorKind: 'outcome_unknown', lastError: 'Résultat réseau indéterminé : une relance peut répéter la requête.',
+                            checkpoint: { stage: 'outcome_unknown', previous: job.checkpoint || null, at: now }, updatedAt: now });
+                        continue;
+                    }
                     const attempts = Number(job.attempts) || 0;
                     const maxAttempts = Math.max(1, Number(job.maxAttempts) || 5);
                     if (attempts >= maxAttempts) {
@@ -1409,7 +1465,6 @@ class SealarcaDB {
                     store.put({ ...job, status: 'pending', nextRunAt: now + delay, leaseOwner: null, leaseToken: null,
                         leaseExpiresAt: null,
                         checkpoint: { stage: 'recovered_after_interruption', previous: job.checkpoint || null, at: now }, updatedAt: now });
-                    recovered += 1;
                 }
                 setResult(recovered);
             };

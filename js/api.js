@@ -235,9 +235,9 @@ class SealarcaAPI {
         const controller = new AbortController();
         this.profileControllers.add(controller);
         let timedOut = false;
-        const abortFromCaller = () => controller.abort();
+        const abortFromCaller = () => controller.abort(signal.reason);
         if (signal) {
-            if (signal.aborted) controller.abort();
+            if (signal.aborted) controller.abort(signal.reason);
             else signal.addEventListener('abort', abortFromCaller, { once: true });
         }
         const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, REQUEST_TIMEOUT_MS);
@@ -256,15 +256,15 @@ class SealarcaAPI {
                 body: JSON.stringify(payload),
                 signal: controller.signal
             }, { context: 'réponse', maxRetries, retryNetworkErrors: false });
-            const data = await response.json().catch(() => { throw new Error('La réponse API JSON est invalide.'); });
+            const data = await response.json().catch(error => { throw Object.assign(error, { kind: 'outcome_unknown', retryable: false }); });
             const text = this._extractResponseText(data);
             if (!text) throw new Error('La réponse API ne contient aucun texte exploitable.');
             return { text, response: data };
         } catch (error) {
-            if (timedOut && error.name === 'AbortError') {
+            if ((timedOut || signal?.reason === 'timeout') && error.name === 'AbortError') {
                 const timeoutError = new Error('La requête API a dépassé le délai autorisé.');
-                timeoutError.retryable = true;
-                timeoutError.status = 408;
+                timeoutError.retryable = false;
+                timeoutError.kind = 'outcome_unknown';
                 throw timeoutError;
             }
             throw error;
@@ -307,8 +307,11 @@ class SealarcaAPI {
                 attempt += 1;
             } catch (error) {
                 if (error.name === 'AbortError') throw error;
-                if (!allowNetworkRetry) throw error;
-                const retryable = error.retryable === true || /network|fetch|timeout|réseau|connexion/i.test(String(error.message || ''));
+                if (!error.status && method === 'POST') {
+                    error.kind = 'outcome_unknown';
+                    error.retryable = false;
+                }
+                const retryable = error.retryable === true || (allowNetworkRetry && error.name === 'TypeError');
                 if (!retryable || attempt >= maxRetries) throw error;
                 await this._delay(error.retryAfterMs || this._backoffDelay(attempt + 1), options.signal);
                 attempt += 1;

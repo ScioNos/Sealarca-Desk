@@ -32,7 +32,8 @@ No application backend, analytics SDK, or CDN is used by the runtime.
 - **Document workspace** with local full-text search, canonical Markdown preview, source references, original-file download, folder overview, and `index.md` overview export.
 - **Dossier analysis** from current local profiles: summaries, chronology, parties, obligations, amounts, comparisons, and apparent differences. Results link to source locations and are marked for verification. These actions do not send document contents; profile generation remains an explicit per-document action.
 - **Operation history and traces** with progress steps, notices, cancellation/retry where applicable, and source manifests for chat responses and local dossier actions. Folder-level context mode can override the general setting.
-- **AI-generated document profiles** (summary, people, organizations, dates, and important items) processed through a persistent two-worker queue with retry, cancellation, deduplication, and recovery after interruption. Profile generation sends document Markdown to the selected Sealarca model.
+- **AI-generated document profiles** (summary, people, organizations, dates, and important items) processed through a persistent two-worker queue with explicit HTTP retries, cancellation and deduplication. Unknown POST outcomes require explicit retry; only unsent preparations resume automatically. Profile generation sends document Markdown to the selected Sealarca model.
+- **Coverage and repairs**: schema v3 profiles (prompt v2) distinguish complete, partial and unknown coverage independently of validity. Analyses using partial/unknown profiles are partial. Legacy XLSX/ODT extraction can be repaired explicitly from the stored original, preserving identity and history while marking the previous profile stale. Repair never triggers AI generation. Local search uses a cached Blob worker, cooperative fallback and 150 ms debounce. IndexedDB remains v6.
 - **Responses API integration**: dynamic model discovery through `GET /v1/models`; streaming and non-streaming requests through `POST /v1/responses`, with `store: false`, sliding 120-second timeout, retryable HTTP backoff, and chat plus profile cancellation.
 - **Streaming output** with a reasoning drawer when the gateway emits supported reasoning-summary events.
 - **Five work modes**: Document Analysis, Summary & Drafting, Legal & Contracts, Tax & Fiduciary, and Compliance & Confidentiality.
@@ -109,6 +110,8 @@ npm run release:build
 ```
 
 ## License
+
+The ZIP builder supports Windows PowerShell 5.1 and PowerShell 7. `node scripts/verify-release.js` checks normalized entries, CRC32, source content, extraction and SHA-256; CI also checks extraction on Linux. `node scripts/verify-browser.cjs` runs repair, coverage, concurrent-send and 20 × 500,000-character search checks in Chromium and Firefox under HTTP and `file://`, with outbound calls blocked. It requires a separately installed Playwright test runtime and browsers; `PLAYWRIGHT_MODULE`, `CHROMIUM_EXECUTABLE`, `FIREFOX_EXECUTABLE` and `BROWSER_APP_ROOT` can select an existing runtime or extracted application. No browser-test dependency is added to the release.
 
 This source-available project is licensed under the **PolyForm Perimeter License 1.0.1**. See [LICENSE](LICENSE). It is not presented as open-source software.
 

@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sealarca-Desk 1.2.0 — Analyse de dossier &amp; nouvelle expérience documentaire</title>
-    
     <!-- Sécurité CSP stricte : Aucun script externe, requêtes autorisées uniquement vers Sealarca Vault et local -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' file: blob: data:; script-src 'self' file:; style-src 'self' file: 'unsafe-inline'; img-src 'self' file: data: blob:; font-src 'self' file: data:; connect-src 'self' file: blob: data: https://api.sealarca.ch http://localhost:* http://127.0.0.1:*; worker-src 'self' file: blob:; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'none';">
     <script src="js/boot-theme.js?v=1.2.0"></script>
@@ -262,7 +261,7 @@
                                         <template x-for="doc in msg.traceDocuments" :key="doc.id">
                                             <div class="trace-document-row">
                                                 <span class="status-dot" :class="doc.included ? 'status-ready' : 'status-partial'" aria-hidden="true"></span>
-                                                <div class="trace-document-main"><strong x-text="doc.name"></strong><small x-text="doc.traceStatusLabel"></small>
+                                                <div class="trace-document-main"><strong x-text="doc.name"></strong><small x-text="doc.traceStatusLabel"></small><small x-show="doc.coverageLabel" x-text="doc.coverageLabel"></small>
                                                     <div class="trace-source-list"><template x-for="source in doc.visibleSources" :key="source.sourceId || source.reference"><button type="button" class="trace-source-link" @click="source.open" x-text="source.reference"></button></template></div>
                                                 </div>
                                             </div>
@@ -365,6 +364,7 @@
                         <div>
                             <!-- Bouton Envoyer ou Arrêter -->
                             <button type="button" class="btn-send" :class="sendButtonClass"
+                                    :disabled="sendDisabled"
                                     @click="sendOrStop"
                                     :title="inputActionTitle" :aria-label="inputActionTitle">
                                 <template x-if="showSendIcon">
@@ -572,7 +572,7 @@
                                             <div class="trace-drawer" x-show="operation.traceDocuments.length">
                                                 <div class="trace-drawer-heading"><strong x-text="operation.traceSummaryLabel"></strong><span class="local-only-chip" x-show="operation.localOnlyLabel" x-text="operation.localOnlyLabel"></span></div>
                                                 <template x-for="doc in operation.traceDocuments" :key="doc.id">
-                                                    <div class="trace-document-row"><span class="status-dot" :class="doc.included ? 'status-ready' : 'status-partial'" aria-hidden="true"></span><div class="trace-document-main"><strong x-text="doc.name"></strong><small x-text="doc.traceStatusLabel"></small><div class="trace-source-list"><template x-for="source in doc.visibleSources" :key="source.sourceId || source.reference"><button type="button" class="trace-source-link" @click="source.open" x-text="source.reference"></button></template></div></div></div>
+                                                    <div class="trace-document-row"><span class="status-dot" :class="doc.included ? 'status-ready' : 'status-partial'" aria-hidden="true"></span><div class="trace-document-main"><strong x-text="doc.name"></strong><small x-text="doc.traceStatusLabel"></small><small x-show="doc.coverageLabel" x-text="doc.coverageLabel"></small><div class="trace-source-list"><template x-for="source in doc.visibleSources" :key="source.sourceId || source.reference"><button type="button" class="trace-source-link" @click="source.open" x-text="source.reference"></button></template></div></div></div>
                                                 </template>
                                             </div>
                                             <div class="operation-result-list" x-show="operation.resultLines.length">
@@ -682,6 +682,8 @@
                                         <span class="document-main"><strong x-text="doc.name"></strong><small class="extraction-warning" x-show="doc.warningText" x-text="doc.warningText"></small><small><span x-text="doc.extension"></span> · <span x-text="doc.sizeLabel"></span><template x-if="doc.pageLabel"> · <span x-text="doc.pageLabel"></span></template> · <span class="status-chip" :class="doc.analysisStatusClass" x-text="doc.analysisStatusLabel"></span></small><small x-show="doc.profileAnalysisDateLabel" x-text="doc.profileAnalysisDateLabel"></small></span>
                                     </button>
                                     <div class="document-actions">
+                                        <button type="button" class="btn btn-secondary btn-compact" x-show="doc.needsExtractionRepair" :disabled="doc.repairDisabled" @click="doc.repair" x-text="doc.repairLabel"></button>
+                                        <small x-show="doc.coverageLabel" x-text="doc.coverageLabel"></small>
                                         <button type="button" class="btn btn-secondary btn-compact" @click="doc.generateProfile" x-text="documentsGenerateProfile"></button>
                                         <button type="button" class="btn btn-secondary btn-compact" @click="doc.preview" x-text="documentsPreviewLabel"></button>
                                         <button type="button" class="btn btn-secondary btn-compact" @click="doc.download" x-text="documentsDownloadLabel"></button>
@@ -708,7 +710,7 @@
                         <div class="document-empty" x-show="hasNoProcessingJobs" x-text="documentsNoJobs"></div>
                         <div class="job-list" x-show="hasProcessingJobs">
                             <template x-for="job in processingJobs" :key="job.id">
-                                <div class="job-row"><span class="job-status" :class="job.status" x-text="job.statusLabel"></span><span class="job-main"><strong x-text="job.documentName"></strong><small><span x-text="job.checkpointStage"></span><span x-show="job.lastError" x-text="job.lastError"></span></small></span><button type="button" class="btn btn-secondary btn-compact" x-show="job.canCancel" @click="job.cancel" x-text="documentsJobCancel"></button><button type="button" class="btn btn-secondary btn-compact" x-show="job.canRetry" @click="job.retry" x-text="documentsJobRetry"></button></div>
+                                <div class="job-row"><span class="job-status" :class="job.status" x-text="job.statusLabel"></span><span class="job-main"><strong x-text="job.documentName"></strong><small><span x-text="job.checkpointStage"></span><span x-show="job.lastError" x-text="job.errorLabel"></span></small></span><button type="button" class="btn btn-secondary btn-compact" x-show="job.canCancel" @click="job.cancel" x-text="documentsJobCancel"></button><button type="button" class="btn btn-secondary btn-compact" x-show="job.canRetry" @click="job.retry" x-text="documentsJobRetry"></button></div>
                             </template>
                         </div>
                     </section>
@@ -727,6 +729,7 @@
                                 <h2 class="modal-title" id="document-preview-title" x-text="documentPreviewTitle"></h2>
                                 <template x-for="warning in documentPreviewWarnings"><p class="extraction-warning" x-text="warning"></p></template>
                                 <p class="modal-subtitle"><span x-text="previewDocument.mimeType"></span> · <span x-text="documentPreviewSize"></span></p>
+                                <p class="extraction-warning" x-show="previewCoverageLabel" x-text="previewCoverageLabel"></p>
                             </div>
                             <button type="button" class="modal-close" @click="closeDocumentPreview" :aria-label="documentsCloseLabel">&times;</button>
                         </div>

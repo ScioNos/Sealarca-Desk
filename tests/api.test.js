@@ -211,7 +211,7 @@ test('un GET /models en échec réseau reste rejoué (idempotent)', async () => 
     let calls = 0;
     const api = loadApi(async () => {
         calls += 1;
-        if (calls === 1) throw new Error('Network request failed');
+        if (calls === 1) throw new TypeError('Network request failed');
         return new Response(JSON.stringify({ data: ['m1'] }), { status: 200, headers: { 'content-type': 'application/json' } });
     });
     const models = await api.fetchModels('secret');

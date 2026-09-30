@@ -163,3 +163,26 @@ test('oversized documents are rejected before parsing or persistence', async () 
   await assert.rejects(handler().parseFile({ name: 'large.txt', size: 20 * 1024 * 1024 + 1 }), /20 Mo/);
   await assert.rejects(handler().parseFile({ name: 'large.txt', size: 500001, text: async () => 'x'.repeat(500001) }), /500 000/);
 });
+
+test('XLSX preserves sparse column positions and bounds distant columns', async () => {
+  const file = await zipFixture('sparse.xlsx', {
+    'xl/workbook.xml': '<workbook xmlns:r="urn:r"><sheets><sheet name="Budget" sheetId="1" r:id="r1"/></sheets></workbook>',
+    'xl/_rels/workbook.xml.rels': '<Relationships><Relationship Id="r1" Target="worksheets/sheet1.xml"/></Relationships>',
+    'xl/worksheets/sheet1.xml': '<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Personne</t></is></c><c r="B1" t="inlineStr"><is><t>Montant</t></is></c><c r="C1" t="inlineStr"><is><t>Date</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>Alice</t></is></c><c r="C2" t="inlineStr"><is><t>2026-09-30</t></is></c><c r="XFD2"><v>999</v></c></row></sheetData></worksheet>'
+  });
+  const parsed = await handler()._parseXlsx(file);
+  assert.match(parsed.markdown, /\| Alice \|   \| 2026-09-30 \|/);
+  assert.doesNotMatch(parsed.markdown, /999/);
+  assert.equal(parsed.warnings.some(w => w.code === 'columns'), true);
+  assert.equal(parsed.sourceMap[0].locator.range, 'A1:C2');
+});
+
+test('ODT retains document order, list paragraphs once, and tables with provenance', async () => {
+  const file = await zipFixture('ordered.odt', { 'content.xml': '<office:document-content xmlns:office="urn:office" xmlns:text="urn:text" xmlns:table="urn:table"><office:body><office:text><text:p>Introduction</text:p><text:h>Titre</text:h><text:list><text:list-item><text:p>Obligation unique</text:p></text:list-item></text:list><table:table><table:table-row><table:table-cell><text:p>CHF 50000</text:p></table:table-cell></table:table-row></table:table></office:text></office:body></office:document-content>' });
+  const parsed = await handler()._parseOdf(file, 'odt');
+  assert.ok(parsed.markdown.indexOf('Introduction') < parsed.markdown.indexOf('Titre'));
+  assert.equal(parsed.markdown.split('Obligation unique').length, 2);
+  assert.match(parsed.markdown, /CHF 50000/);
+  assert.equal(parsed.sourceMap.at(-1).locator.type, 'odf-table');
+  assert.equal(parsed.warnings.length, 0);
+});

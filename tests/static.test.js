@@ -155,7 +155,7 @@ test('l’expérience de dossier consolide les fiches localement et garde des tr
     assert.doesNotMatch(html, /mcp-plan|mcp-drawer/);
     assert.doesNotMatch(html, /x-text="t\(/);
     const runtime = ['js', 'css'].flatMap(directory => fs.readdirSync(path.join(root, directory)).filter(file => /\.(js|css)$/.test(file)).map(file => read(directory + '/' + file))).join('\n') + html;
-    assert.doesNotMatch(runtime, /SealarcaMcp|McpClient|ResearchRun|OpenCaseLaw|mcp-|research-|opencaselaw-|tool_choice|function_call|pairing/i);
+    assert.doesNotMatch(runtime, /SealarcaMcp|McpClient|ResearchRun|OpenCaseLaw|mcp-|research-|opencaselaw-|tool_choice|function_call|\bpairing\b/i);
 });
 
 test('le premier écran explique le modèle et le rôle sans promesse géographique', () => {

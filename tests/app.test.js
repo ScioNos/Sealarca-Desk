@@ -53,6 +53,130 @@ function configureApi(app) {
     app.decorateMessage = message => message;
 }
 
+test('découverte des modèles : changement ou oubli de clé écarte toute réponse tardive', async () => {
+    let release;
+    const { app } = loadApp({ sealarcaApi: { fetchModels: () => new Promise(resolve => { release = resolve; }), abortAllRequests() {} },
+        sealarcaDb: { async deleteSetting() {} } });
+    app.apiKey = 'key-A'; app.focusApiKeyInput = () => {};
+    const first = app.loadModels();
+    app.updateApiKey({ currentTarget: { value: 'key-B' } });
+    release([{ id: 'model-A' }]); assert.equal(await first, false);
+    assert.equal(app.verifiedApiKey, ''); assert.equal(app.models.length, 0);
+    const second = app.loadModels(); await app.forgetApiKey(); release([{ id: 'model-B' }]);
+    assert.equal(await second, false); assert.equal(app.apiKey, ''); assert.equal(app.models.length, 0);
+});
+
+test('résultats de recherche périmés et changements de dossier ne sont jamais appliqués', async () => {
+    const pending = [];
+    const { app } = loadApp(); app.activeFolderId = 'A';
+    app.searchService = { search: () => new Promise(resolve => pending.push(resolve)) };
+    app.documentSearchQuery = 'ancienne'; const first = app.runDocumentSearch();
+    app.documentSearchQuery = 'récente'; const second = app.runDocumentSearch();
+    pending[1]([{ id: 'B', matchedTerms: [] }]); await second;
+    pending[0]([{ id: 'A', matchedTerms: [] }]); await first; assert.equal(app.documentSearchResults[0].id, 'B');
+    const third = app.runDocumentSearch(); app.activeFolderId = 'B';
+    pending[2]([{ id: 'wrong-folder', matchedTerms: [] }]); await third; assert.equal(app.documentSearchResults[0].id, 'B');
+});
+
+test('actualisations groupées de jobs : aucune lecture des documents ou des traces', async () => {
+    const { app } = loadApp(); app.activeFolderId = 'folder';
+    let jobs = 0; app.loadProcessingJobs = async () => jobs++;
+    app.loadDocuments = app.loadFolderOperations = () => { throw new Error('full_reload'); };
+    app.buildFolderOverview = () => {};
+    await Promise.all([app.refreshFolderWorkspace({ folderId: 'folder', domains: ['jobs'] }), app.refreshFolderWorkspace({ folderId: 'folder', domains: ['jobs'] })]);
+    assert.equal(jobs, 1);
+    await app.refreshFolderWorkspace({ folderId: 'other', domains: ['jobs'] }); assert.equal(jobs, 1);
+});
+
+test('fiche historique : couverture inconnue et analyse partielle dans la trace sans appel IA', async () => {
+    const { app, db, window } = await loadStoredApp();
+    window.sealarcaApi = { completeResponse() { throw new Error('unexpected_network'); } };
+    await db.saveDocument({ id: 'unknown', folderId: 'folder_default', name: 'legacy.txt', hash: 'legacy', markdown: 'Texte' });
+    await db.saveDocumentProfile({ documentId: 'unknown', folderId: 'folder_default', status: 'valid', inputFingerprint: 'fp:legacy', summary: 'Ancienne fiche' });
+    await app.runFolderAnalysis('summary');
+    const operation = (await db.getOperations('folder_default'))[0];
+    assert.equal(operation.status, 'partial');
+    const trace = await db.getTrace(operation.resultRef.traceId);
+    assert.equal(trace.documents[0].coverage.status, 'unknown');
+    assert.ok(trace.notices.some(notice => notice.code === 'profile_coverage_unknown'));
+});
+
+test('double envoi : un seul appel et verrou libéré après une erreur de persistance', async () => {
+    let calls = 0;
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    const { app, window } = loadApp({ sealarcaDb: {
+        async getDocuments() { await gate; return []; }, async getDocumentsByIds() { return []; },
+        async saveMessage() {},
+    }, sealarcaApi: { async streamResponse() { calls++; } } });
+    configureApi(app); app.inputPrompt = 'Question';
+    const first = app.sendMessage();
+    await app.sendMessage();
+    assert.equal(app.isSending, true);
+    release(); await first;
+    assert.equal(calls, 1);
+    assert.equal(app.isSending, false);
+    app.isStreaming = false; app.inputPrompt = 'Retry';
+    window.sealarcaDb.saveMessage = async () => { throw new Error('Quota'); };
+    await app.sendMessage();
+    assert.equal(app.isSending, false);
+    assert.equal(app.inputPrompt, 'Retry');
+    assert.equal(calls, 1);
+});
+
+test('navigation inversée ne remplace jamais les messages du dernier choix', async () => {
+    const release = {};
+    const { app } = loadApp({ sealarcaDb: { getMessages: id => new Promise(resolve => { release[id] = resolve; }) } });
+    app.scrollToBottom = () => {};
+    const left = app.selectConversation('A');
+    const right = app.selectConversation('B');
+    release.B([{ id: 'b', role: 'user', content: 'B' }]); await right;
+    release.A([{ id: 'a', role: 'user', content: 'A' }]); await left;
+    assert.equal(app.activeConversationId, 'B');
+    assert.equal(app.messages[0].content, 'B');
+    assert.equal(app.isNavigating, false);
+});
+
+test('navigation dossiers inversée : aucun document ou historique du précédent dossier', async () => {
+    const release = {};
+    const { app } = loadApp({ sealarcaDb: {
+        async setSetting() {}, getDocuments: id => new Promise(resolve => { release[id] = resolve; }),
+        async getDocumentProfiles() { return []; }, async getConversations() { return []; },
+        async getProcessingJobs() { return []; }, async getOperations() { return []; }
+    } });
+    app.buildFolderOverview = () => {}; app.messages = [{ content: 'ancien' }];
+    const first = app.selectFolder('A'); await new Promise(resolve => setTimeout(resolve, 0));
+    const second = app.selectFolder('B'); await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(app.messages.length, 0);
+    release.B([{ id: 'doc-B', folderId: 'B' }]); await second;
+    release.A([{ id: 'doc-A', folderId: 'A' }]); await first;
+    assert.equal(app.activeFolderId, 'B'); assert.equal(app.documents[0].id, 'doc-B'); assert.equal(app.isNavigating, false);
+});
+
+test('une ancienne entrée de conversation ne peut pas charger son historique dans un autre dossier', async () => {
+    const { app } = loadApp({ sealarcaDb: { async getConversation() { return { id: 'old', folderId: 'A' }; },
+        getMessages() { throw new Error('wrong_folder_read'); } } });
+    app.activeFolderId = 'B'; await app.selectConversation('old');
+    assert.equal(app.activeConversationId, null); assert.equal(app.messages.length, 0); assert.equal(app.isNavigating, false);
+});
+
+test('import conserve le dossier initial et arrête le lot si ce dossier disparaît', async () => {
+    const { app, window, db } = await loadStoredApp();
+    await db.saveFolder({ id: 'B', name: 'B' });
+    let release;
+    window.sealarcaDocHandler = { parseFile: () => new Promise(resolve => { release = resolve; }) };
+    const first = app.processFiles([{ name: 'secret.txt' }]);
+    app.activeFolderId = 'B';
+    release({ id: 'secret', name: 'secret.txt', markdown: 'secret', hash: 'secret' }); await first;
+    assert.equal((await db.getDocument('secret')).folderId, 'folder_default');
+    assert.equal(app.selectedDocumentIds.length, 0);
+    app.activeFolderId = 'folder_default';
+    const second = app.processFiles([{ name: 'other.txt' }, { name: 'last.txt' }]);
+    await db.deleteFolder('folder_default');
+    release({ id: 'other', name: 'other.txt', markdown: 'other' }); await second;
+    assert.equal(await db.getDocument('other'), null);
+});
+
 async function loadStoredApp() {
     const context = { window: {}, indexedDB: new IDBFactory(), IDBKeyRange, console };
     vm.createContext(context);
@@ -281,7 +405,7 @@ test('le registre du dossier ignore les fiches périmées et lie les montants à
         id: 'doc-old', name: 'old.pdf', sourceMap: []
     }];
     app.documentProfiles = [{
-        documentId: 'doc-a', status: 'valid', inputFingerprint: 'current:doc-a', people: ['Alex Doe'], organizations: ['Example GmbH'],
+        documentId: 'doc-a', status: 'valid', coverage: { status: 'complete' }, inputFingerprint: 'current:doc-a', people: ['Alex Doe'], organizations: ['Example GmbH'],
         importantAmounts: [{ amount: 'CHF 12 000', sourceIds: ['page-1'], references: [{ sourceId: 'page-1', label: 'contract.pdf — page 1' }] }],
         obligations: [{ label: 'Send notice', deadline: '2025-01-14', sourceIds: ['page-1'], references: [{ sourceId: 'page-1', label: 'contract.pdf — page 1' }] }],
         importantDates: [{ date: '2025-01-14', label: 'Notice', sourceIds: ['page-1'], references: [{ sourceId: 'page-1', label: 'contract.pdf — page 1' }] }]
@@ -308,7 +432,7 @@ test('les actions de dossier synthétisent les fiches localement et conservent l
     };
     const documents = [document, unprofiledDocument];
     const profile = {
-        documentId: document.id, folderId: document.folderId, status: 'valid', inputFingerprint: 'fp-doc-local', summary: 'Local summary',
+        documentId: document.id, folderId: document.folderId, status: 'valid', coverage: { status: 'complete' }, inputFingerprint: 'fp-doc-local', summary: 'Local summary',
         importantDates: [{ date: '2025-04-01', label: 'Notice', sourceIds: ['page-4'], references: [{ sourceId: 'page-4', label: 'contract.pdf — page 4' }] }]
     };
     const profiles = [profile];

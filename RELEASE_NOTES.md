@@ -8,12 +8,19 @@ This release adds a local multi-document dossier workspace. It preserves the 1.1
 
 ## Changes
 
+- Fix concurrent sends, stale navigation/model/search loads and imports whose destination changes or disappears.
+- Preserve sparse XLSX columns and ODT document order, lists and tables. Legacy XLSX/ODT records offer explicit local re-extraction from the stored original, preserving identity and history, atomically updating Markdown/provenance and invalidating derivatives. No AI regeneration is triggered.
+- Use profile schema v3 with independent complete/partial/unknown coverage, character/source counters, cut-source IDs and limiting reasons. Keep prompt v2 and the 120,000-character/100-source bounds. Historical profiles remain readable with unknown coverage; local analyses using partial or unknown profiles are partial and snapshot coverage in new metadata-only traces.
+- Retry only explicit retryable HTTP errors. Unknown POST outcomes, expired dispatched leases and ambiguous legacy checkpoints require explicit retry; only unsent preparations resume automatically. Recover expired leases every 30 seconds, serialize queue pumping and refresh only changed workspace data.
+- Bound excerpts to their source offsets. Run local search and automatic selection through a cached Blob worker compatible with the existing CSP, with cooperative fallback, a 150 ms debounce and stale-result guards.
+- Build ZIP entries with `/` separators in Windows PowerShell 5.1 and PowerShell 7, verify each entry against staged content, then issue its SHA-256 checksum.
+
 - Run dossier summaries, timelines, entity/party lists, obligation lists, amount lists, comparisons, and apparent-difference checks over current profiles already stored in the browser. Results are labeled as unverified and link to their source locations.
 - Track operations with persistent status, four progress steps, notices, cancellation, retry, stale-run recovery, and a metadata-only provenance trace. Chat answer traces also record the documents and references used.
 - Keep folder actions local. Traces store document/source IDs, locators, counts, and notices, not document text. Generating a profile remains an explicit action for a document; its Markdown is sent to the selected Sealarca model as in prior releases.
 - Add per-folder manual/automatic chat-context overrides, clear document/profile status chips, profile amount/obligation details, and a richer `index.md` dossier export.
 - Upgrade IndexedDB to v6 with `operations` and `traces` stores; export/import format is `6.0`. Existing profiles created with the v1 prompt fingerprint are marked stale and can be regenerated explicitly.
-- Expand profile schema/prompt v2 to capture sourced entities, dates, events, amounts, obligations, and important items. Keep the existing 120,000-character/100-source profile bounds and 250,000-character chat-context limit.
+- Expand profile schema v3/prompt v2 to capture sourced entities, dates, events, amounts, obligations, important items and coverage. Keep the existing 120,000-character/100-source profile bounds and 250,000-character chat-context limit.
 - Preserve every source of a consolidated event and give different events on the same page distinct stable identifiers. Expose dates and events in the local structured dossier model.
 - Mark results based on partially extracted documents as partial, retain extraction notices and identify each missing or stale profile. Documents omitted by the operation limit remain listed in the trace.
 - Snapshot operation steps and nested notice/locator metadata in historical traces. Record the model actually used even if the selection changes during streaming.
@@ -23,6 +30,8 @@ This release adds a local multi-document dossier workspace. It preserves the 1.1
 ## Verification
 
 The release checks cover v5-to-v6 migration, export/import, cross-tab operation leases, trace persistence, source filtering, dossier aggregation, profile normalization, the five interface languages, and the full `npm run check` suite.
+
+The September 30 correction pass passes 125 tests. Real Chromium 151 and Firefox 153 checks pass under HTTP and `file://`: local ODT repair preserves the original and identity, invalidates the old profile, refreshes visible text, and triggers no external request; concurrent sends produce one request/conversation. Local worker search over 20 documents of 500,000 characters remains responsive and reuses its cache. The generated ZIP is checked against every distributed source file, its CRC32 and SHA-256; the extracted copy runs the same browser checks. ZIP creation is validated with Windows PowerShell 5.1 and PowerShell 7, with Linux extraction also covered by CI. Publishing a remote release remains a separate action.
 
 The September 30 audit adds regression coverage for multi-source events on the same page, partial extraction, historical traces after document/profile changes, real Alpine CSP drawer reactivity, cancellation during IndexedDB reads, interrupted chat provenance, and explicit model capabilities. The runtime remains a static browser application; no fork transport, external tools, corpus, pairing, or Python service is included.
 

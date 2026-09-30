@@ -8,6 +8,37 @@ const { IDBFactory, IDBKeyRange } = require('fake-indexeddb');
 const root = path.join(__dirname, '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 
+test('réparation atomique conserve original et historique, invalide fiche et dérivations', async () => {
+    const db = await readyDb();
+    await db.saveDocument({ id: 'repair', folderId: 'folder_default', name: 'repair.xlsx', hash: 'hash', sourceFile: new Blob(['original']), markdown: 'ancienne', createdAt: 100,
+        metadata: { extraction: { parserVersion: 2 } }, sourceMap: [{ id: 'old-source' }] });
+    await db.saveDocumentProfile({ documentId: 'repair', folderId: 'folder_default', status: 'valid', summary: 'historique' });
+    await db._request('documentChunks', 'readwrite', store => store.put({ id: 'chunk', documentId: 'repair', text: 'ancienne' }));
+    await db._request('traces', 'readwrite', store => store.put({ id: 'history', folderId: 'folder_default', documents: [{ id: 'repair' }] }));
+    const job = await db.enqueueProcessingJob({ documentId: 'repair', folderId: 'folder_default', type: 'document-profile', inputFingerprint: 'old' });
+    const parsed = { markdown: 'corrigée', sourceMap: [{ id: 'new-source', markdownStart: 0, markdownEnd: 8 }], sourceMapVersion: 1, metadata: { extraction: { parserVersion: 3, revision: 1 } } };
+    const updated = await db.replaceDocumentExtraction('repair', parsed, 0);
+    assert.equal(updated.id, 'repair'); assert.equal(updated.hash, 'hash'); assert.equal(updated.folderId, 'folder_default'); assert.equal(updated.createdAt, 100);
+    assert.equal(await updated.sourceFile.text(), 'original'); assert.equal(updated.metadata.extraction.revision, 1);
+    assert.equal((await db.getDocumentProfile('repair')).status, 'stale'); assert.equal((await db.getDocumentProfile('repair')).summary, 'historique');
+    assert.equal((await db.getProcessingJob(job.id)).status, 'cancelled');
+    assert.equal((await db._request('documentChunks', 'readonly', store => store.getAll())).length, 0);
+    assert.equal((await db.getTrace('history')).documents[0].id, 'repair');
+    await assert.rejects(db.replaceDocumentExtraction('repair', { ...parsed, markdown: 'échec' }, 0), /modifié/);
+    assert.equal((await db.getDocument('repair')).markdown, 'corrigée');
+    assert.equal((await db.getDocumentProfile('repair')).status, 'stale');
+});
+
+test('baux expirés : seules les préparations sont reprises, les anciens checkpoints sont indéterminés', async () => {
+    const db = await readyDb(); await db.saveDocument({ id: 'leases', folderId: 'folder_default', name: 'leases.txt', markdown: 'Texte' });
+    for (const [id, checkpoint] of [['preparing', { stage: 'preparing' }], ['sent', { stage: 'request_dispatched' }], ['legacy', null]]) {
+        await db.saveProcessingJob({ id, documentId: 'leases', status: 'running', attempts: 1, leaseExpiresAt: Date.now() - 1, checkpoint });
+    }
+    assert.equal(await db.recoverInterruptedJobs(), 3);
+    assert.equal((await db.getProcessingJob('preparing')).status, 'pending');
+    for (const id of ['sent', 'legacy']) { const job = await db.getProcessingJob(id); assert.equal(job.status, 'failed'); assert.equal(job.errorKind, 'outcome_unknown'); }
+});
+
 test('IndexedDB v6 conserve les stores, ajoute opérations/traces et migre les jobs v4', () => {
     const db = read('js/db.js');
     assert.match(db, /const DB_VERSION = 6/);
@@ -137,10 +168,11 @@ test('migration v4→v6 conserve toutes les données existantes et rend les jobs
     assert.equal((await db.getDocumentProfile('document_legacy')).summary, 'Fiche existante');
     assert.equal((await db.getProcessingJob('job_pending')).checkpoint.stage, 'queued');
     const recovered = await db.getProcessingJob('job_running');
-    assert.equal(recovered.status, 'pending');
+    assert.equal(recovered.status, 'failed');
     assert.equal(recovered.checkpoint.stage, 'recovered_after_v4');
     assert.equal(recovered.leaseOwner, null);
-    assert.equal(recovered.nextRunAt <= Date.now(), true);
+    assert.equal(recovered.nextRunAt, null);
+    assert.equal(recovered.errorKind, 'outcome_unknown');
 });
 
 test('migration v5→v6 ajoute les stores sans réécrire les enregistrements existants', async () => {
@@ -250,7 +282,7 @@ test('la reprise ne récupère que les baux expirés', async () => {
     await db.saveDocument({ id: 'doc_jobs', folderId: 'folder_jobs', name: 'jobs.txt', markdown: 'Texte' });
     const now = Date.now();
     await db.saveProcessingJob({ id: 'live', documentId: 'doc_jobs', status: 'running', leaseOwner: 'tab', leaseToken: 'live-token', leaseExpiresAt: now + 180000 });
-    await db.saveProcessingJob({ id: 'expired', documentId: 'doc_jobs', status: 'running', leaseOwner: 'tab-old', leaseToken: 'expired-token', leaseExpiresAt: now - 1 });
+    await db.saveProcessingJob({ id: 'expired', documentId: 'doc_jobs', status: 'running', leaseOwner: 'tab-old', leaseToken: 'expired-token', leaseExpiresAt: now - 1, checkpoint: { stage: 'preparing' } });
     assert.equal(await db.recoverInterruptedJobs(), 1);
     assert.equal((await db.getProcessingJob('live')).status, 'running');
     assert.equal((await db.getProcessingJob('expired')).status, 'pending');
@@ -400,9 +432,9 @@ test('le contexte IA sépare historique et documents sélectionnés', () => {
     assert.match(app, /selectRelevantDocuments\(folderDocuments, text/);
     assert.match(app, /getDocuments\(folderId\)/);
     assert.match(app, /contextSelection: \{/);
-    assert.match(app, /const contextMode = this\.effectiveContextMode/);
+    assert.match(app, /contextMode: this\.effectiveContextMode/);
     assert.match(app, /mode: contextMode === 'automatic' \? 'automatic' : 'manual'/);
-    assert.match(app, /buildDocumentContext\(selectedDocuments, text, contextMode\)/);
+    assert.match(app, /buildDocumentContext\(selectedDocuments, text, contextMode, \{ excerpts \}\)/);
     assert.match(app, /documentRefs/);
     assert.doesNotMatch(app, /m\.fullPayload \|\| m\.content/);
     assert.doesNotMatch(app, /formattedPromptText/);

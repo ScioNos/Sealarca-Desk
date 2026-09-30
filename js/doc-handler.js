@@ -84,7 +84,8 @@ class SealarcaDocHandler {
                 ...(parsed.metadata || {}),
                 extraction: {
                     parser: parsed.parser || extension,
-                    parserVersion: 2,
+                    parserVersion: 3,
+                    revision: 1,
                     local: true,
                     extractedAt: new Date(now).toISOString(),
                     warnings: parsed.warnings || [],
@@ -456,31 +457,46 @@ class SealarcaDocHandler {
             const cellReferences = [];
             const markdownRows = [];
             let truncatedColumns = false;
+            let width = 0;
             for (let rowIndex = 0; rowIndex < usedRows.length; rowIndex++) {
                 const row = usedRows[rowIndex];
-                const cells = this._getElementsByLocalName(row, 'c').slice(0, this.limits.maxTabularColumns);
-                if (this._getElementsByLocalName(row, 'c').length > this.limits.maxTabularColumns) truncatedColumns = true;
-                cells.forEach(cell => { if (cell.getAttribute('r')) cellReferences.push(cell.getAttribute('r')); });
-                const values = cells.map(cell => {
+                const cells = this._getElementsByLocalName(row, 'c');
+                const values = [];
+                let nextColumn = 0;
+                for (const cell of cells) {
+                    const reference = cell.getAttribute('r');
+                    const match = /^([A-Z]+)\d+$/i.exec(reference || '');
+                    const column = match ? Array.from(match[1].toUpperCase()).reduce((value, letter) => value * 26 + letter.charCodeAt(0) - 64, 0) - 1 : nextColumn;
+                    nextColumn = column + 1;
+                    if (column >= this.limits.maxTabularColumns) { truncatedColumns = true; continue; }
+                    if (reference) cellReferences.push(reference);
                     const type = cell.getAttribute('t');
                     const valueNode = this._getElementsByLocalName(cell, 'v')[0];
                     let value = valueNode ? valueNode.textContent : '';
                     if (type === 's' && typeof value === 'string' && /^\d+$/.test(value.trim()) && sharedStrings[Number(value)] !== undefined) value = sharedStrings[Number(value)];
                     if (type === 'inlineStr') value = this._getElementsByLocalName(cell, 't').map(item => item.textContent).join('');
                     if ((!type || type === 'n') && dateStyles[Number(cell.getAttribute('s') || 0)]) value = this._excelDateValue(value, date1904);
-                    return String(value).trim().replace(/\|/g, '\\|') || ' ';
-                });
+                    values[column] = String(value).trim().replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>') || ' ';
+                    width = Math.max(width, column + 1);
+                }
                 if (!values.some(cell => cell.trim() && cell !== ' ')) continue;
-                const line = '| ' + values.join(' | ') + ' |';
-                markdownRows.push(rowIndex === 0 ? line + '\n| ' + values.map(() => '---').join(' | ') + ' |' : line);
+                markdownRows.push(values);
             }
+            const table = markdownRows.map((values, rowIndex) => {
+                const line = '| ' + Array.from({ length: width }, (_, column) => values[column] || ' ').join(' | ') + ' |';
+                return rowIndex === 0 ? line + '\n| ' + Array(width).fill('---').join(' | ') + ' |' : line;
+            }).join('\n');
             const firstRow = usedRows[0]?.getAttribute('r') || (usedRows.length ? '1' : null);
             const lastRow = usedRows[usedRows.length - 1]?.getAttribute('r') || firstRow;
-            const range = cellReferences.length ? `${cellReferences[0]}:${cellReferences[cellReferences.length - 1]}` : null;
+            const coordinates = cellReferences.map(reference => /^([A-Z]+)(\d+)$/i.exec(reference)).filter(Boolean)
+                .map(match => ({ column: Array.from(match[1].toUpperCase()).reduce((value, letter) => value * 26 + letter.charCodeAt(0) - 64, 0), row: Number(match[2]) }));
+            const columnName = value => { let name = ''; while (value > 0) { value -= 1; name = String.fromCharCode(65 + value % 26) + name; value = Math.floor(value / 26); } return name; };
+            const range = coordinates.length ? columnName(Math.min(...coordinates.map(cell => cell.column))) + Math.min(...coordinates.map(cell => cell.row))
+                + ':' + columnName(Math.max(...coordinates.map(cell => cell.column))) + Math.max(...coordinates.map(cell => cell.row)) : null;
             if (rows.length > usedRows.length) result.warnings.push({ code: 'rows', sheet: sheetName, used: usedRows.length, total: rows.length });
             if (truncatedColumns) result.warnings.push({ code: 'columns', sheet: sheetName, used: this.limits.maxTabularColumns });
             if (markdownRows.length) {
-                this._appendSection(result, `## ${sheetName}\n\n${markdownRows.join('\n')}`, {
+                this._appendSection(result, `## ${sheetName}\n\n${table}`, {
                     type: 'spreadsheet-range', sheet: sheetName, range, startRow: firstRow, endRow: lastRow, truncated: rows.length > usedRows.length || truncatedColumns
                 }, sheetName);
             }
@@ -533,29 +549,69 @@ class SealarcaDocHandler {
         if (!content) throw new Error('Fichier OpenDocument invalide (content.xml introuvable).');
         const doc = this._parseXml(content, 'OpenDocument');
         if (extension === 'ods') return this._extractOds(doc, file.name);
-        const result = { markdown: `# Document OpenDocument : ${file.name}\n\n`, sourceMap: [], metadata: {}, parser: 'odf-xml' };
+        const result = { markdown: `# Document OpenDocument : ${file.name}\n\n`, sourceMap: [], metadata: {}, parser: 'odf-xml', warnings: [] };
         let paragraph = 0;
-        const textNodes = [
-            ...this._getElementsByLocalName(doc, 'h'),
-            ...this._getElementsByLocalName(doc, 'p'),
-            ...this._getElementsByLocalName(doc, 'list-item')
-        ];
-        const inTable = node => {
-            let current = node?.parentNode;
-            while (current) {
-                if (this._elementName(current) === 'table') return true;
-                current = current.parentNode;
-            }
-            return false;
+        let tableCount = 0;
+        const textOf = node => {
+            if (node.nodeType === 3) return node.nodeValue || '';
+            const name = this._elementName(node);
+            if (name === 's') return ' '.repeat(Math.min(1000, Math.max(1, Number(this._attributeByLocalName(node, 'c')) || 1)));
+            if (name === 'tab') return '\t';
+            if (name === 'line-break') return '\n';
+            return Array.from(node.childNodes || []).map(textOf).join('');
         };
-        for (const node of textNodes) {
-            if (inTable(node)) continue;
-            const text = (node.textContent || '').trim();
-            if (!text) continue;
-            paragraph += 1;
-            this._appendSection(result, text, { type: 'odf-paragraph', paragraph }, `Bloc ${paragraph}`);
-        }
+        const visit = node => {
+            const name = this._elementName(node);
+            if (name === 'p' || name === 'h') {
+                const text = textOf(node).trim();
+                if (text) {
+                    paragraph++;
+                    this._appendSection(result, (name === 'h' ? '## ' : '') + text, { type: 'odf-paragraph', paragraph }, `Bloc ${paragraph}`);
+                }
+                return;
+            }
+            if (name === 'table') {
+                tableCount++;
+                const rows = this._getElementsByLocalName(node, 'table-row').filter(row => {
+                    let parent = row.parentNode;
+                    while (parent && this._elementName(parent) !== 'table') parent = parent.parentNode;
+                    return parent === node;
+                });
+                const values = [];
+                let width = 0;
+                let totalRows = 0;
+                for (const row of rows) {
+                    const repeatRows = Math.max(1, Number(this._attributeByLocalName(row, 'number-rows-repeated')) || 1);
+                    totalRows += repeatRows;
+                    const cells = [];
+                    for (const cell of Array.from(row.childNodes || []).filter(child => ['table-cell', 'covered-table-cell'].includes(this._elementName(child)))) {
+                        const repeat = Math.max(1, Number(this._attributeByLocalName(cell, 'number-columns-repeated')) || 1);
+                        const value = textOf(cell).trim().replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>') || ' ';
+                        if (cells.length + repeat > this.limits.maxTabularColumns && !result.warnings.some(warning => warning.code === 'columns' && warning.sheet === 'Tableau ' + tableCount)) result.warnings.push({ code: 'columns', sheet: 'Tableau ' + tableCount, used: this.limits.maxTabularColumns });
+                        for (let i = 0; i < repeat && cells.length < this.limits.maxTabularColumns; i++) cells.push(value);
+                    }
+                    width = Math.max(width, cells.length);
+                    for (let i = 0; i < repeatRows && values.length < this.limits.maxTabularRowsPerSheet; i++) values.push(cells);
+                }
+                if (totalRows > values.length) result.warnings.push({ code: 'rows', sheet: 'Tableau ' + tableCount, used: values.length, total: totalRows });
+                const table = values.map((cells, index) => {
+                    const line = '| ' + Array.from({ length: width }, (_, i) => cells[i] || ' ').join(' | ') + ' |';
+                    return index === 0 ? line + '\n| ' + Array(width).fill('---').join(' | ') + ' |' : line;
+                }).join('\n');
+                if (values.some(cells => cells.some(value => value.trim()))) this._appendSection(result, table, { type: 'odf-table', table: tableCount, startRow: 1, endRow: values.length }, `Tableau ${tableCount}`);
+                if (this._getElementsByLocalName(node, 'table').length > 0) result.warnings.push({ code: 'odf_structure', structure: 'nested-table' });
+                return;
+            }
+            const children = Array.from(node.childNodes || []);
+            if (node.nodeType === 1 && !children.some(child => child.nodeType === 1) && textOf(node).trim()) {
+                result.warnings.push({ code: 'odf_structure', structure: name });
+            }
+            children.filter(child => child.nodeType === 1).forEach(visit);
+        };
+        const body = this._getElementsByLocalName(doc, 'body')[0];
+        if (body) visit(body);
         result.metadata.paragraphCount = paragraph;
+        result.metadata.tableCount = tableCount;
         return result;
     }
 

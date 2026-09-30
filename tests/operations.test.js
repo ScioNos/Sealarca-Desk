@@ -13,6 +13,16 @@ function loadOperations() {
     return context.window.SealarcaOperations;
 }
 
+test('coverage traces whitelist counters and discard document text', () => {
+    const operations = loadOperations();
+    const coverage = { status: 'partial', totalCharacters: 200000, sentCharacters: 120000, totalSources: 200, representedSources: 100,
+        cutSourceIds: ['p1'], reasons: ['character_limit'], markdown: 'SECRET', summary: 'SECRET' };
+    const trace = operations.createTrace({ folderId: 'folder', manifest: { documents: [{ id: 'document', coverage }] } });
+    assert.equal(trace.documents[0].coverage.sentCharacters, 120000);
+    assert.doesNotMatch(JSON.stringify(trace), /SECRET|markdown|summary/);
+    coverage.sentCharacters = 1; assert.equal(trace.documents[0].coverage.sentCharacters, 120000);
+});
+
 test('generic operations expose bounded lifecycle steps and recoverable notices', () => {
     const operations = loadOperations();
     const operation = operations.createOperation('timeline', 'folder', ['doc-a', 'doc-a', 'doc-b'], 100);

@@ -24,3 +24,10 @@ jobs:
         run: npm ci
       - name: Run checks
         run: npm run check
+      - name: Build local release with PowerShell 7
+        shell: pwsh
+        run: |
+          npm run vendor:build
+          ./scripts/build-release.ps1
+      - name: Verify ZIP and extraction on Linux
+        run: node scripts/verify-release.js

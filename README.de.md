@@ -2,6 +2,8 @@
 
 # 🛡️ Sealarca-Desk
 
+Profile v3 unterscheiden Gültigkeit und vollständige, teilweise oder unbekannte Abdeckung. Analysen mit teilweiser oder unbekannter Abdeckung bleiben teilweise. Alte XLSX/ODT-Extraktionen lassen sich ausdrücklich lokal aus dem Original reparieren: Identität und Verlauf bleiben erhalten, das bisherige Profil wird veraltet, ohne automatische KI-Anfrage. Die Suche verwendet einen lokalen Worker und Cache mit kooperativem Fallback und 150 ms Verzögerung. POST-Anfragen mit unbestimmtem Netzwerkergebnis erfordern einen ausdrücklichen Neustart; nur nicht gesendete Vorbereitungen werden automatisch fortgesetzt. IndexedDB bleibt v6.
+
 **Eigenständiger lokaler Browser-Client für das Schweizer KI-Gateway [Sealarca](https://sealarca.ch)**  
 *Lokale Dokumentaufbereitung, explizite Kontextauswahl und direkter Vault-Zugriff.*
 

@@ -23,6 +23,13 @@
 
 ### Audit corrections — 2026-09-30
 
+- Prevent duplicate sends, stale context/model/search results and imports being redirected after navigation.
+- Preserve sparse XLSX columns, ODT reading order and cited source boundaries. Offer explicit local repair without automatic AI regeneration, preserving identity, originals and historical traces.
+- Add profile schema v3 (prompt v2) coverage counters, cut-source notices and metadata snapshots; keep IndexedDB v6 and historical profiles readable with unknown coverage.
+- Fail ambiguous network outcomes conservatively; resume only unsent preparations automatically and check expired leases every 30 seconds.
+- Serialize queue pumping, avoid idle document reloads and use cached local worker search with cooperative fallback and a 150 ms debounce.
+- Normalize ZIP entries to `/` and validate entries/content before issuing SHA-256 in Windows PowerShell 5.1 and PowerShell 7.
+
 - Preserve all event sources and stable unique IDs; expose structured dates and events.
 - Mark partial extraction explicitly, identify missing profiles and retain documents omitted by limits.
 - Snapshot operation steps and nested provenance metadata; retain the actual streaming request model.

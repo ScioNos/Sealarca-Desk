@@ -49,11 +49,18 @@ document.addEventListener('alpine:init', () => {
         selectedDocumentIds: [],
         attachedFiles: [], // documents du dossier sélectionnés pour la requête courante
         previewDocument: null,
+        previewVersion: 0,
+        repairingDocumentIds: [],
         documentProfiles: [],
         processingJobs: [],
         documentPanelTab: 'overview',
         documentSearchQuery: '',
         documentSearchResults: [],
+        documentSearchVersion: 0,
+        documentSearchTimer: null,
+        searchService: null,
+        workspaceRefresh: null,
+        workspaceRefreshVersion: 0,
         contextMode: 'manual',
         folderOverview: { documentCount: 0, pageCount: 0, profileCount: 0, people: [], organizations: [], dates: [], items: [], timeline: [], entities: { people: [], organizations: [], amounts: [], obligations: [], documents: [], sources: [] } },
         folderOperations: [],
@@ -66,9 +73,15 @@ document.addEventListener('alpine:init', () => {
         p1Queue: null,
         inputPrompt: '',
         isStreaming: false,
+        isSending: false,
+        isNavigating: false,
+        navigationVersion: 0,
+        modelsRequestVersion: 0,
         currentStreamingMessage: '',
         currentStreamingReasoning: '',
         activeStreamPromise: null,
+        activeSendPromise: null,
+        sendCancelled: false,
         isReasoningOpen: true,
 
         // --- Rôles métiers ---
@@ -123,6 +136,7 @@ document.addEventListener('alpine:init', () => {
         get documentsProvenanceLabel() { return this.t('documents.provenance'); },
         get documentsDownloadOriginalLabel() { return this.t('documents.downloadOriginal'); },
         get documentPreviewWarnings() { return this.extractionWarnings(this.previewDocument); },
+        get previewCoverageLabel() { return this.coverageLabel(this.previewDocument?.profile); },
         get documentPreviewTitle() { return this.previewDocument ? this.previewDocument.name : this.t('documents.preview'); },
         get documentPreviewSize() { return this.previewDocument ? this.formatBytes(this.previewDocument.size) : ''; },
         get previewHasProfile() {
@@ -198,7 +212,8 @@ document.addEventListener('alpine:init', () => {
         get showMoonIcon() { return !this.isDarkMode; },
         get showSunIcon() { return this.isDarkMode; },
         get themeButtonLabel() { return this.t(this.isDarkMode ? 'app.themeLight' : 'app.themeDark'); },
-        get modelsDisabled() { return this.isStreaming || this.models.length === 0; },
+        get modelsDisabled() { return this.isSending || this.isStreaming || this.models.length === 0; },
+        get sendDisabled() { return this.isNavigating || (this.isSending && !this.isStreaming); },
         get hasNoModels() { return this.models.length === 0; },
         get showEmptyState() { return this.messages.length === 0 && !this.isStreaming; },
         get hasAttachedFiles() { return this.attachedFiles.length > 0; },
@@ -471,6 +486,7 @@ document.addEventListener('alpine:init', () => {
         updatePrompt(event) { this.inputPrompt = event.currentTarget.value; },
         updateApiKey(event) {
             const nextKey = event.currentTarget.value;
+            if (nextKey !== this.apiKey) { this.modelsRequestVersion += 1; this.isLoadingModels = false; }
             if (nextKey.trim() !== this.verifiedApiKey) {
                 this.models = [];
                 this.selectedModel = '';
@@ -677,6 +693,9 @@ document.addEventListener('alpine:init', () => {
 
         // --- Découverte des modèles Sealarca ---
         async loadModels(silent = false) {
+            const key = this.apiKey.trim();
+            const version = ++this.modelsRequestVersion;
+            const current = () => version === this.modelsRequestVersion && key === this.apiKey.trim();
             if (!this.apiKey || !this.apiKey.trim()) {
                 this.apiError = this.t('settings.keyMissing');
                 this.isSettingsOpen = true;
@@ -687,7 +706,10 @@ document.addEventListener('alpine:init', () => {
             this.apiError = '';
 
             try {
-                const fetched = await window.sealarcaApi.fetchModels(this.apiKey);
+                const fetched = await window.sealarcaApi.fetchModels(key);
+                if (!current()) return false;
+                await window.sealarcaDb.deleteSetting('sealarca_api_key');
+                if (!current()) return false;
                 this.models = fetched;
                 if (this.models.length > 0) {
                     const exists = this.models.some(m => m.id === this.selectedModel);
@@ -696,12 +718,13 @@ document.addEventListener('alpine:init', () => {
                         await window.sealarcaDb.deleteSetting('sealarca_model');
                     }
                 }
-                try { sessionStorage.setItem('sealarca_api_key_session', this.apiKey.trim()); } catch { /* indisponible */ }
-                this.verifiedApiKey = this.apiKey.trim();
-                await window.sealarcaDb.deleteSetting('sealarca_api_key');
+                if (!current()) return false;
+                try { sessionStorage.setItem('sealarca_api_key_session', key); } catch { /* indisponible */ }
+                this.verifiedApiKey = key;
                 if (!silent) this.showToast(this.t('settings.syncSuccess'));
                 return true;
             } catch (err) {
+                if (!current()) return false;
                 console.error('Erreur découverte modèles:', err);
                 this.models = [];
                 this.selectedModel = '';
@@ -714,7 +737,7 @@ document.addEventListener('alpine:init', () => {
                 this.focusApiKeyInput();
                 return false;
             } finally {
-                this.isLoadingModels = false;
+                if (current()) this.isLoadingModels = false;
             }
         },
 
@@ -733,6 +756,10 @@ document.addEventListener('alpine:init', () => {
         },
 
         async forgetApiKey() {
+            this.modelsRequestVersion += 1;
+            this.isLoadingModels = false;
+            this.apiKey = '';
+            this.verifiedApiKey = '';
             if (window.sealarcaApi && typeof window.sealarcaApi.abortAllRequests === 'function') window.sealarcaApi.abortAllRequests('cancelled');
             else window.sealarcaApi.abortCurrentRequest();
             try { sessionStorage.removeItem('sealarca_api_key_session'); } catch { /* indisponible */ }
@@ -765,21 +792,33 @@ document.addEventListener('alpine:init', () => {
         },
 
         async selectFolder(id, loadLatestConversation = true) {
-            if (this.isStreaming || !id) return;
+            if (this.isSending || this.isStreaming || !id) return;
+            const version = ++this.navigationVersion;
+            this.isNavigating = true;
+            try {
             this.activeFolderId = id;
-            await window.sealarcaDb.setSetting('sealarca_active_folder', id);
             this.activeConversationId = null;
             this.messages = [];
+            this.conversations = [];
+            this.documents = [];
+            this.documentProfiles = [];
+            this.processingJobs = [];
+            this.folderOperations = [];
+            this.documentSearchResults = [];
             this.inputPrompt = '';
             this.selectedDocumentIds = [];
             this.attachedFiles = [];
-            await Promise.all([this.loadDocuments(), this.loadConversations(), this.loadDocumentProfiles(), this.loadProcessingJobs()]);
+            await window.sealarcaDb.setSetting('sealarca_active_folder', id);
+            if (version !== this.navigationVersion) return;
+            await Promise.all([this.loadDocuments(id, version), this.loadConversations(id, version), this.loadDocumentProfiles(id, version), this.loadProcessingJobs(id, version), this.loadFolderOperations(id, version)]);
+            if (version !== this.navigationVersion) return;
             this.buildFolderOverview();
             if (loadLatestConversation && this.conversations.length > 0) await this.selectConversation(this.conversations[0].id);
+            } finally { if (version === this.navigationVersion) this.isNavigating = false; }
         },
 
         async createFolder() {
-            if (this.isStreaming) return;
+            if (this.isSending || this.isStreaming) return;
             const name = window.prompt(this.t('folders.namePrompt'), this.t('folders.defaultName'));
             if (!name || !name.trim()) return;
             const now = Date.now();
@@ -822,6 +861,7 @@ document.addEventListener('alpine:init', () => {
                 const folderDocuments = await window.sealarcaDb.getDocuments(id).catch(() => []);
                 if (Array.isArray(folderDocuments) && folderDocuments.length) {
                     this.p1Queue?.abortJobsForDocuments?.(folderDocuments.map(document => document?.id), 'folder_deleted');
+                    folderDocuments.forEach(document => this.searchService?.invalidate(document.id));
                 }
             } catch (_) { /* annulation best-effort */ }
             const deleted = await window.sealarcaDb.deleteFolder(id);
@@ -832,21 +872,25 @@ document.addEventListener('alpine:init', () => {
         },
 
         // --- Bibliothèque documentaire du dossier ---
-        async loadDocuments() {
+        async loadDocuments(folderId = this.activeFolderId, version = this.navigationVersion) {
             if (!this.activeFolderId) { this.documents = []; return; }
             const app = this;
-            const documents = await window.sealarcaDb.getDocuments(this.activeFolderId);
-            const profiles = await window.sealarcaDb.getDocumentProfiles(this.activeFolderId);
-            const profileByDocument = new Map(profiles.map(profile => [profile.documentId, profile]));
+            const documents = await window.sealarcaDb.getDocuments(folderId);
+            const profiles = await window.sealarcaDb.getDocumentProfiles(folderId);
+            if (folderId !== this.activeFolderId || version !== this.navigationVersion) return;
             this.documentProfiles = profiles;
             this.documents = documents.map(document => {
                 const decorated = {
                     ...document,
-                    profile: profileByDocument.get(document.id) || null,
+                    get profile() { return app.documentProfiles.find(profile => profile.documentId === document.id) || null; },
                     get isSelected() { return app.selectedDocumentIds.includes(document.id); },
                     get selectionClass() { return decorated.isSelected ? 'selected' : ''; },
                     get selectionMark() { return decorated.isSelected ? '✓' : '+'; },
                     get warningText() { return app.extractionWarnings(document).join(' · '); },
+                    get needsExtractionRepair() { return app.needsExtractionRepair(document); },
+                    get repairLabel() { return app.t(document.sourceFile ? 'documents.reextract' : 'documents.reimportRequired'); },
+                    get repairDisabled() { return !document.sourceFile || app.repairingDocumentIds.includes(document.id); },
+                    repair() { app.reextractDocument(document.id); },
                     get sizeLabel() { return app.formatBytes(document.size); },
                     get pageLabel() { const pages = Number(document.metadata?.pageCount || 0); return pages ? pages + ' ' + app.t('documents.pagesUnit') : ''; },
                     get profileAnalysisDateLabel() {
@@ -856,6 +900,7 @@ document.addEventListener('alpine:init', () => {
                         return app.t('documents.lastProfileDate').replaceAll('{date}', date);
                     },
                     get profileStatusLabel() { return app.t(decorated.profile?.status === 'valid' && decorated.profile.inputFingerprint === window.SealarcaP1.fingerprintDocument(document) ? 'documents.profileAvailable' : 'documents.profileToGenerate'); },
+                    get coverageLabel() { return app.coverageLabel(decorated.profile); },
                     get analysisStatus() { return app.documentAnalysisStatus(document, decorated.profile); },
                     get analysisStatusLabel() { return app.t('dossier.status.' + decorated.analysisStatus); },
                     get analysisStatusClass() { return 'status-' + decorated.analysisStatus; },
@@ -879,9 +924,11 @@ document.addEventListener('alpine:init', () => {
         },
 
         async openDocumentPreview(id) {
+            const version = ++this.previewVersion, navigation = this.navigationVersion;
             const documentRecord = await window.sealarcaDb.getDocument(id);
             if (documentRecord) {
                 documentRecord.profile = await window.sealarcaDb.getDocumentProfile(id);
+                if (version !== this.previewVersion || navigation !== this.navigationVersion || documentRecord.folderId !== this.activeFolderId) return;
                 this.previewDocument = documentRecord;
                 this.openModal('isDocumentPreviewOpen', 'preview', '.modal-close');
             }
@@ -892,8 +939,34 @@ document.addEventListener('alpine:init', () => {
             if (this.runningFolderOperation?.documentIds?.includes(id)) await this.cancelFolderOperation(this.runningFolderOperation.id);
             try { this.p1Queue?.abortJobsForDocument?.(id, 'document_deleted'); } catch (_) { /* annulation best-effort */ }
             await window.sealarcaDb.deleteDocument(id);
+            this.searchService?.invalidate(id);
             this.selectedDocumentIds = this.selectedDocumentIds.filter(documentId => documentId !== id);
             await this.loadDocuments();
+        },
+
+        needsExtractionRepair(document) {
+            return ['xlsx', 'odt'].includes(document?.extension) && Number(document.metadata?.extraction?.parserVersion || 0) < 3;
+        },
+
+        async reextractDocument(id) {
+            if (this.repairingDocumentIds.includes(id)) return;
+            this.repairingDocumentIds.push(id);
+            try {
+                const current = await window.sealarcaDb.getDocument(id);
+                if (!current?.sourceFile) { this.showToast(this.t('documents.reimportRequired'), 6000); return; }
+                this.p1Queue?.abortJobsForDocument?.(id, 'extraction_replaced');
+                const activeJobs = await window.sealarcaDb.getProcessingJobs(current.folderId);
+                for (const job of activeJobs.filter(job => job.documentId === id && job.status === 'running')) await window.sealarcaDb.cancelProcessingJob(job.id);
+                if (this.runningFolderOperation?.documentIds?.includes(id)) await this.cancelFolderOperation(this.runningFolderOperation.id);
+                const file = new File([current.sourceFile], current.originalName || current.name, { type: current.mimeType || '', lastModified: current.source?.lastModified || 0 });
+                const parsed = await window.sealarcaDocHandler.parseFile(file);
+                await window.sealarcaDb.replaceDocumentExtraction(id, parsed, Number(current.metadata?.extraction?.revision || 0));
+                this.searchService?.invalidate?.(id);
+                if (this.activeFolderId === current.folderId) await this.refreshFolderWorkspace();
+                if (this.previewDocument?.id === id) this.previewDocument = { ...await window.sealarcaDb.getDocument(id), profile: await window.sealarcaDb.getDocumentProfile(id) };
+                this.showToast(this.t('documents.reextractSuccess'), 6000);
+            } catch (error) { this.showToast(this.t('documents.reextractFailed') + ': ' + error.message, 7000); }
+            finally { this.repairingDocumentIds = this.repairingDocumentIds.filter(value => value !== id); }
         },
 
         downloadPreviewDocument() {
@@ -932,7 +1005,9 @@ document.addEventListener('alpine:init', () => {
 
         async cancelAndWaitForStream() {
             const stream = this.activeStreamPromise;
-            if (!this.isStreaming && !stream) return;
+            const send = this.activeSendPromise;
+            if (this.isSending) this.sendCancelled = true;
+            if (!this.isStreaming && !stream && !send) return;
             if (this.isStreaming && window.sealarcaApi) {
                 if (typeof window.sealarcaApi.abortAllRequests === 'function') window.sealarcaApi.abortAllRequests('cancelled');
                 else window.sealarcaApi.abortCurrentRequest();
@@ -943,6 +1018,7 @@ document.addEventListener('alpine:init', () => {
                 }
             }
             if (stream) await stream;
+            if (send) await send;
         },
 
         buildDocumentContext(documents, query = '', mode = this.effectiveContextMode, options = {}) {
@@ -961,7 +1037,7 @@ document.addEventListener('alpine:init', () => {
             for (const document of selectedDocuments) {
                 const sourceMap = Array.isArray(document.sourceMap) ? document.sourceMap : [];
                 const excerpts = mode === 'automatic'
-                    ? window.SealarcaP1.citableExcerpts(document, query, { limit: maxSourcesPerDocument })
+                    ? (options.excerpts?.get(document.id) || window.SealarcaP1.citableExcerpts(document, query, { limit: maxSourcesPerDocument }))
                     : sourceMap.map(source => ({
                         sourceId: source.id,
                         reference: window.SealarcaP1.sourceReference(document, source),
@@ -1003,6 +1079,7 @@ document.addEventListener('alpine:init', () => {
                 if (included) sections.push(section);
                 const warnings = document.metadata?.extraction?.warnings || [];
                 if (included && warnings.length) notices.push(window.SealarcaOperations.createNotice('document_extraction_partial', 'partial', { documentId: document.id, metadata: { name: document.name, warnings } }));
+                if (included && this.needsExtractionRepair(document)) notices.push(window.SealarcaOperations.createNotice('document_extraction_outdated', 'partial', { documentId: document.id, metadata: { name: document.name } }));
                 citationDocuments.push({ ...document, sourceMap: sentSourceMap });
                 const sourceIds = sourceEntries.map(item => item.source?.id).filter(Boolean);
                 const characterCount = body.length || sourceEntries.reduce((sum, item) => sum + item.characterCount, 0);
@@ -1042,23 +1119,29 @@ document.addEventListener('alpine:init', () => {
                 db: window.sealarcaDb,
                 api: window.sealarcaApi,
                 concurrency: 2,
-                getCredentials: () => ({ apiKey: this.apiKey, model: this.selectedModel }),
-                onChange: () => this.refreshFolderWorkspace()
+                getCredentials: () => this.hasVerifiedApiKey ? ({ apiKey: this.verifiedApiKey, model: this.selectedModel }) : {},
+                onChange: change => this.refreshFolderWorkspace(change)
             });
             await this.p1Queue.start();
         },
 
-        async loadDocumentProfiles() {
-            this.documentProfiles = this.activeFolderId ? await window.sealarcaDb.getDocumentProfiles(this.activeFolderId) : [];
+        async loadDocumentProfiles(folderId = this.activeFolderId, version = this.navigationVersion) {
+            const profiles = folderId ? await window.sealarcaDb.getDocumentProfiles(folderId) : [];
+            if (folderId === this.activeFolderId && version === this.navigationVersion) {
+                this.documentProfiles = profiles;
+                if (this.previewDocument?.folderId === folderId) this.previewDocument = { ...this.previewDocument, profile: profiles.find(profile => profile.documentId === this.previewDocument.id) || null };
+            }
         },
 
-        async loadProcessingJobs() {
+        async loadProcessingJobs(folderId = this.activeFolderId, version = this.navigationVersion) {
             const app = this;
-            const jobs = this.activeFolderId ? await window.sealarcaDb.getProcessingJobs(this.activeFolderId) : [];
+            const jobs = folderId ? await window.sealarcaDb.getProcessingJobs(folderId) : [];
+            if (folderId !== this.activeFolderId || version !== this.navigationVersion) return;
             this.processingJobs = jobs.map(job => {
                 const document = app.documents.find(item => item.id === job.documentId);
                 const decorated = {
                     ...job,
+                    get errorLabel() { return job.errorKind === 'outcome_unknown' ? app.t('documents.outcomeUnknown') : job.lastError; },
                     documentName: document?.name || job.documentId,
                     get statusLabel() { return app.t(({ pending: 'documents.statusPending', running: 'documents.statusRunning', completed: 'documents.statusCompleted', failed: 'documents.statusFailed', cancelled: 'documents.statusCancelled' })[job.status] || 'documents.statusFailed'); },
                     get checkpointStage() { return job.checkpoint?.stage || ''; },
@@ -1071,11 +1154,44 @@ document.addEventListener('alpine:init', () => {
             });
         },
 
-        async refreshFolderWorkspace() {
-            if (!this.activeFolderId) return;
-            await Promise.all([this.loadDocuments(), this.loadDocumentProfiles(), this.loadProcessingJobs(), this.loadFolderOperations()]);
-            this.buildFolderOverview();
-            if (this.documentSearchQuery.trim()) this.runDocumentSearch();
+        async refreshFolderWorkspace(change = null) {
+            const folderId = this.activeFolderId, version = this.navigationVersion;
+            if (!folderId || (change?.folderId && change.folderId !== folderId)) return;
+            const domains = change?.domains || ['documents', 'profiles', 'jobs', 'operations'];
+            if (this.workspaceRefresh?.folderId === folderId && this.workspaceRefresh.version === version) {
+                domains.forEach(domain => this.workspaceRefresh.domains.add(domain));
+                return this.workspaceRefresh.promise;
+            }
+            const batch = { folderId, version, token: ++this.workspaceRefreshVersion, domains: new Set(domains) };
+            this.workspaceRefresh = batch;
+            batch.promise = (async () => {
+                await Promise.resolve();
+                while (batch.domains.size) {
+                    const requested = new Set(batch.domains); batch.domains.clear();
+                    await Promise.all([
+                        requested.has('documents') && this.loadDocuments(folderId, version),
+                        requested.has('profiles') && this.loadDocumentProfiles(folderId, version),
+                        requested.has('jobs') && this.loadProcessingJobs(folderId, version),
+                        requested.has('operations') && this.loadFolderOperations(folderId, version)
+                    ]);
+                    if (folderId !== this.activeFolderId || version !== this.navigationVersion) return;
+                    this.buildFolderOverview();
+                    if (requested.has('documents') && this.documentSearchQuery.trim()) await this.runDocumentSearch();
+                }
+            })();
+            try { await batch.promise; } finally { if (this.workspaceRefresh?.token === batch.token) this.workspaceRefresh = null; }
+        },
+
+        destroy() {
+            this.p1Queue?.stop();
+            this.searchService?.destroy();
+            clearTimeout(this.documentSearchTimer);
+            clearTimeout(this.toastTimeout);
+            this.navigationVersion += 1;
+            this.documentSearchVersion += 1;
+            this.modelsRequestVersion += 1;
+            window.sealarcaApi?.abortAllRequests?.('component_destroyed');
+            this.sendCancelled = true;
         },
 
         buildFolderOverview() {
@@ -1123,13 +1239,15 @@ document.addEventListener('alpine:init', () => {
             };
         },
 
-        async loadFolderOperations() {
-            const operations = this.activeFolderId ? await window.sealarcaDb.getOperations(this.activeFolderId) : [];
+        async loadFolderOperations(folderId = this.activeFolderId, version = this.navigationVersion) {
+            const operations = folderId ? await window.sealarcaDb.getOperations(folderId) : [];
             const traceRows = await Promise.all(operations.map(async operation => ({ operation, trace: operation.resultRef?.traceId ? await window.sealarcaDb.getTrace(operation.resultRef.traceId) : null })));
+            if (folderId !== this.activeFolderId || version !== this.navigationVersion) return;
             this.folderOperations = traceRows.map(({ operation, trace }) => {
                 const app = this;
                 const traceDocuments = (trace?.documents || []).map(item => ({
                     ...item,
+                    get coverageLabel() { return app.coverageLabel(item.coverage ? { coverage: item.coverage } : null); },
                     traceStatusLabel: app.t(item.included ? 'dossier.traceIncluded' : 'dossier.traceOmitted')
                         .replaceAll('{count}', String((trace.sources || []).filter(source => source.documentId === item.id).length)),
                     visibleSources: (trace.sources || []).filter(source => source.documentId === item.id).map(source => ({
@@ -1221,13 +1339,25 @@ document.addEventListener('alpine:init', () => {
             return text;
         },
 
+        profileCoverage(profile) {
+            return window.SealarcaOperations.coverageSnapshot(profile?.coverage) || { status: 'unknown', reasons: ['legacy_coverage_unknown'] };
+        },
+
+        coverageLabel(profile) {
+            if (!profile) return '';
+            const coverage = this.profileCoverage(profile);
+            return this.t('documents.coverage' + coverage.status[0].toUpperCase() + coverage.status.slice(1))
+                .replaceAll('{sent}', String(coverage.sentCharacters ?? '?')).replaceAll('{total}', String(coverage.totalCharacters ?? '?'))
+                .replaceAll('{sources}', String(coverage.representedSources ?? '?')).replaceAll('{allSources}', String(coverage.totalSources ?? '?'));
+        },
+
         documentAnalysisStatus(document, profile = document?.profile) {
             const job = this.processingJobs.find(item => item.documentId === document?.id);
             if (job?.status === 'running') return 'processing';
             if (job?.status === 'pending') return 'pending';
             if (job?.status === 'failed') return 'error';
             if (profile?.status === 'valid' && profile.inputFingerprint === window.SealarcaP1.fingerprintDocument(document)) {
-                if ((document?.metadata?.extraction?.warnings || []).length) return 'partial';
+                if ((document?.metadata?.extraction?.warnings || []).length || this.needsExtractionRepair(document) || this.profileCoverage(profile).status !== 'complete') return 'partial';
                 return 'ready';
             }
             if (profile && profile.status !== 'valid') return 'warning';
@@ -1242,6 +1372,7 @@ document.addEventListener('alpine:init', () => {
             }
             this.isStartingFolderOperation = true;
             const folderId = this.activeFolderId;
+            const selectedIds = Array.isArray(requestedDocumentIds) && requestedDocumentIds.length ? [...requestedDocumentIds] : [...this.selectedDocumentIds];
             let allDocuments;
             try {
                 allDocuments = await window.sealarcaDb.getDocuments(folderId);
@@ -1251,9 +1382,7 @@ document.addEventListener('alpine:init', () => {
                 this.showToast(this.t('dossier.operationFailed'), 6000);
                 return;
             }
-            const ids = Array.isArray(requestedDocumentIds) && requestedDocumentIds.length
-                ? requestedDocumentIds
-                : this.selectedDocumentIds.length ? this.selectedDocumentIds : allDocuments.map(document => document.id);
+            const ids = selectedIds.length ? selectedIds : allDocuments.map(document => document.id);
             const selected = new Set(ids);
             const requestedDocuments = allDocuments.filter(document => selected.has(document.id));
             if (!requestedDocuments.length) {
@@ -1316,6 +1445,9 @@ document.addEventListener('alpine:init', () => {
                         for (const document of documents) {
                             const warnings = document.metadata?.extraction?.warnings || [];
                             if (profileByDocument.has(document.id) && warnings.length) operationNotices.push(window.SealarcaOperations.createNotice('document_extraction_partial', 'partial', { documentId: document.id, metadata: { name: document.name, warnings } }));
+                            const profile = profileByDocument.get(document.id);
+                            if (profile && this.profileCoverage(profile).status !== 'complete') operationNotices.push(window.SealarcaOperations.createNotice('profile_coverage_' + this.profileCoverage(profile).status, 'partial', { documentId: document.id, metadata: { name: document.name, coverage: this.profileCoverage(profile) } }));
+                            if (this.needsExtractionRepair(document)) operationNotices.push(window.SealarcaOperations.createNotice('document_extraction_outdated', 'partial', { documentId: document.id, metadata: { name: document.name } }));
                         }
 
                         await setStep('context', 'completed', { kind: 'profiles', count: validProfiles.length, total: documents.length });
@@ -1404,7 +1536,7 @@ document.addEventListener('alpine:init', () => {
                                 ...(profile?.importantItems || []).flatMap(item => item.references || [])
                             ];
                             const sourceIds = [...new Set(fields.map(item => item.sourceId).filter(Boolean))];
-                            return { id: document.id, name: document.name, hash: document.hash || null, pageCount: Number(document.metadata?.pageCount) || null, included: Boolean(profile), characterCount: 0, sourceIds };
+                            return { id: document.id, name: document.name, hash: document.hash || null, pageCount: Number(document.metadata?.pageCount) || null, included: Boolean(profile), characterCount: 0, sourceIds, coverage: profile ? this.profileCoverage(profile) : null };
                         });
                         const traceSources = [];
                         for (const document of documents) {
@@ -1537,12 +1669,24 @@ document.addEventListener('alpine:init', () => {
 
         updateDocumentSearch(event) {
             this.documentSearchQuery = event.currentTarget.value;
-            this.runDocumentSearch();
+            this.documentSearchVersion += 1;
+            clearTimeout(this.documentSearchTimer);
+            this.documentSearchTimer = setTimeout(() => this.runDocumentSearch().catch(error => console.error('Recherche locale:', error)), 150);
         },
 
-        runDocumentSearch() {
+        getSearchService() {
+            if (!this.searchService && window.SealarcaP1?.SearchService) this.searchService = new window.SealarcaP1.SearchService();
+            return this.searchService;
+        },
+
+        async runDocumentSearch() {
             const app = this;
-            const rawResults = window.SealarcaP1.localSearch(this.documents, this.documentSearchQuery, { maxResults: 30, perDocument: 3 });
+            const version = ++this.documentSearchVersion, folderId = this.activeFolderId, navigation = this.navigationVersion;
+            const query = this.documentSearchQuery;
+            const service = this.getSearchService();
+            const rawResults = await (service ? service.search(this.documents, query, { maxResults: 30, perDocument: 3 })
+                : window.SealarcaP1.localSearch(this.documents, query, { maxResults: 30, perDocument: 3 }));
+            if (version !== this.documentSearchVersion || folderId !== this.activeFolderId || navigation !== this.navigationVersion || query !== this.documentSearchQuery) return;
             this.documentSearchResults = rawResults.map(result => ({ ...result, matchedTermsLabel: result.matchedTerms.join(', '), open() { app.openProfileReference(result.documentId, result.sourceId); } }));
         },
 
@@ -1585,9 +1729,10 @@ document.addEventListener('alpine:init', () => {
 
 
         // --- Gestion des Conversations ---
-        async loadConversations() {
+        async loadConversations(folderId = this.activeFolderId, version = this.navigationVersion) {
             const app = this;
-            const conversations = this.activeFolderId ? await window.sealarcaDb.getConversations(this.activeFolderId) : [];
+            const conversations = folderId ? await window.sealarcaDb.getConversations(folderId) : [];
+            if (folderId !== this.activeFolderId || version !== this.navigationVersion) return;
             this.conversations = conversations.map(conversation => {
                 const decorated = {
                     ...conversation,
@@ -1606,6 +1751,7 @@ document.addEventListener('alpine:init', () => {
             const traceSources = Array.isArray(trace?.sources) ? trace.sources : [];
             const traceDocuments = (trace?.documents || []).map(item => ({
                 ...item,
+                get coverageLabel() { return app.coverageLabel(item.coverage ? { coverage: item.coverage } : null); },
                 traceStatusLabel: app.t(item.included ? 'dossier.traceIncluded' : 'dossier.traceOmitted')
                     .replaceAll('{count}', String(traceSources.filter(source => source.documentId === item.id).length)),
                 visibleSources: traceSources.filter(source => source.documentId === item.id).map(source => ({
@@ -1661,7 +1807,9 @@ document.addEventListener('alpine:init', () => {
         },
 
         async newConversation() {
-            if (this.isStreaming) return;
+            if (this.isSending || this.isStreaming) return;
+            ++this.navigationVersion;
+            this.isNavigating = false;
             this.activeConversationId = null;
             this.messages = [];
             this.inputPrompt = '';
@@ -1676,18 +1824,31 @@ document.addEventListener('alpine:init', () => {
         },
 
         async selectConversation(id) {
-            if (this.isStreaming || this.activeConversationId === id) return;
+            if (this.isSending || this.isStreaming || this.activeConversationId === id) return;
+            const version = ++this.navigationVersion;
+            const folderId = this.activeFolderId;
+            this.isNavigating = true;
+            try {
             this.activeConversationId = id;
+            this.messages = [];
+            if (window.sealarcaDb.getConversation) {
+                const conversation = await window.sealarcaDb.getConversation(id);
+                if (version !== this.navigationVersion || folderId !== this.activeFolderId) return;
+                if (!conversation || conversation.folderId !== folderId) { this.activeConversationId = null; return; }
+            }
             const loadedMessages = await window.sealarcaDb.getMessages(id);
-            this.messages = await Promise.all(loadedMessages.map(async message => this.decorateMessage({
+            const messages = await Promise.all(loadedMessages.map(async message => this.decorateMessage({
                 ...message,
                 trace: message.traceId ? await window.sealarcaDb.getTrace(message.traceId) : null
             })));
+            if (version !== this.navigationVersion || folderId !== this.activeFolderId) return;
+            this.messages = messages;
             this.selectedDocumentIds = [];
             this.attachedFiles = [];
             this.currentStreamingMessage = '';
             this.currentStreamingReasoning = '';
             this.scrollToBottom();
+            } finally { if (version === this.navigationVersion) this.isNavigating = false; }
         },
 
         async deleteConversation(id) {
@@ -1715,7 +1876,26 @@ document.addEventListener('alpine:init', () => {
         // --- Envoi d'un Message ---
         async sendMessage() {
             const text = this.inputPrompt.trim();
-            if ((!text && this.attachedFiles.length === 0) || this.isStreaming) return;
+            if ((!text && this.attachedFiles.length === 0) || this.isSending || this.isStreaming || this.isNavigating) return;
+            this.isSending = true;
+            this.sendCancelled = false;
+            const request = {
+                text, conversationId: this.activeConversationId,
+                folderId: this.activeFolderId || window.SEALARCA_DEFAULT_FOLDER_ID,
+                contextMode: this.effectiveContextMode,
+                selectedIds: [...this.selectedDocumentIds],
+                attachments: this.attachedFiles.map(file => ({ name: file.name })),
+                history: this.buildConversationHistory(),
+                apiKey: this.verifiedApiKey, model: this.selectedModel,
+                roleId: this.selectedRole?.id || null, systemPrompt: this.selectedRole?.systemPrompt || null
+            };
+            try { this.activeSendPromise = this.sendCapturedMessage(request); await this.activeSendPromise; }
+            catch (error) { this.showToast(`Erreur : ${error.message}`, 5000); }
+            finally { this.isSending = false; this.activeSendPromise = null; }
+        },
+
+        async sendCapturedMessage(request) {
+            const { text, folderId, contextMode, selectedIds, history, systemPrompt } = request;
 
             if (!this.hasConfiguredApi || !this.selectedModel) {
                 this.isSettingsOpen = true;
@@ -1726,16 +1906,16 @@ document.addEventListener('alpine:init', () => {
                 return;
             }
 
-            let conversationId = this.activeConversationId;
+            let conversationId = request.conversationId;
             let pendingConversation = null;
             if (!conversationId) {
-                const titleText = text || (this.attachedFiles[0] ? `Doc: ${this.attachedFiles[0].name}` : this.t('app.newChat'));
+                const titleText = text || (request.attachments[0] ? `Doc: ${request.attachments[0].name}` : this.t('app.newChat'));
                 pendingConversation = {
                     id: `conv_${window.crypto?.randomUUID?.() || `${Date.now()}_${Math.random().toString(36).slice(2, 12)}`}`,
                     title: titleText.length > 40 ? titleText.substring(0, 40) + '...' : titleText,
-                    folderId: this.activeFolderId || window.SEALARCA_DEFAULT_FOLDER_ID,
-                    model: this.selectedModel,
-                    roleId: this.selectedRole ? this.selectedRole.id : null,
+                    folderId,
+                    model: request.model,
+                    roleId: request.roleId,
                     createdAt: Date.now(),
                     updatedAt: Date.now()
                 };
@@ -1743,17 +1923,16 @@ document.addEventListener('alpine:init', () => {
             }
 
             // 2. Conserver uniquement les références documentaires dans le message.
-            const folderId = this.activeFolderId || window.SEALARCA_DEFAULT_FOLDER_ID;
-            const contextMode = this.effectiveContextMode;
             const folderDocuments = await window.sealarcaDb.getDocuments(folderId);
+            const search = this.getSearchService();
             const automaticSelection = contextMode === 'automatic'
                 ? (text
-                    ? window.SealarcaP1.selectRelevantDocuments(folderDocuments, text, { limit: 5 })
-                    : this.selectedDocumentIds.map(id => ({ document: folderDocuments.find(document => document.id === id), score: 0 })).filter(item => item.document))
+                    ? await (search ? search.select(folderDocuments, text, { limit: 5 }) : window.SealarcaP1.selectRelevantDocuments(folderDocuments, text, { limit: 5 }))
+                    : selectedIds.map(id => ({ document: folderDocuments.find(document => document.id === id), score: 0 })).filter(item => item.document))
                 : [];
             const requestedIds = contextMode === 'automatic'
                 ? automaticSelection.map(item => item.document.id)
-                : this.selectedDocumentIds;
+                : selectedIds;
             const selectedDocuments = (await window.sealarcaDb.getDocumentsByIds(requestedIds))
                 .filter(document => document.folderId === folderId);
             const documentRefs = selectedDocuments.map(document => ({
@@ -1780,11 +1959,12 @@ document.addEventListener('alpine:init', () => {
             };
 
             // Construire et borner exactement le texte qui serait envoyé avant de persister le message.
-            const documentContext = this.buildDocumentContext(selectedDocuments, text, contextMode);
-            const apiMessages = this.buildConversationHistory();
+            const excerpts = contextMode === 'automatic' && search ? await search.excerpts(selectedDocuments, text, { limit: 8 }) : null;
+            const documentContext = this.buildDocumentContext(selectedDocuments, text, contextMode, { excerpts });
+            const apiMessages = history;
             apiMessages.push({ role: 'user', content: userMsg.content + documentContext.text });
-            const systemPrompt = this.selectedRole ? this.selectedRole.systemPrompt : null;
             const contextCharacters = Array.from([systemPrompt || '', ...apiMessages.map(message => message.content || '')].join('')).length;
+            if (this.sendCancelled) return;
             if (contextCharacters > MAX_CHAT_CONTEXT_CHARACTERS) {
                 this.showToast(this.t('app.contextTooLarge'), 7000);
                 return;
@@ -1796,6 +1976,7 @@ document.addEventListener('alpine:init', () => {
                 await this.loadConversations();
             }
             await window.sealarcaDb.saveMessage(userMsg);
+            if (this.sendCancelled) return;
             this.messages.push(this.decorateMessage(userMsg));
 
             // Réinitialiser les entrées uniquement après validation et persistance.
@@ -1808,9 +1989,9 @@ document.addEventListener('alpine:init', () => {
             this.scrollToBottom();
 
             // 5. Lancer le streaming
-            const requestModel = this.selectedModel;
+            const requestModel = request.model;
             const streamPromise = window.sealarcaApi.streamResponse({
-                apiKey: this.apiKey,
+                apiKey: request.apiKey,
                 model: requestModel,
                 messages: apiMessages,
                 instructions: systemPrompt,
@@ -1909,17 +2090,20 @@ document.addEventListener('alpine:init', () => {
         },
 
         extractionWarnings(document) {
-            return (document?.metadata?.extraction?.warnings || []).map(warning => {
+            const warnings = (document?.metadata?.extraction?.warnings || []).map(warning => {
                 if (typeof warning === 'string') return warning;
                 let text = this.t('extraction.' + warning.code);
                 if (text === 'extraction.' + warning.code) text = warning.code;
                 for (const [key, value] of Object.entries(warning)) text = text.replaceAll('{' + key + '}', String(value));
                 return text;
             });
+            if (this.needsExtractionRepair(document)) warnings.push(this.t('documents.extractionOutdated'));
+            return warnings;
         },
 
         async processFiles(fileList) {
             if (!this.activeFolderId) return;
+            const folderId = this.activeFolderId;
             const maxFiles = 5;
             const files = Array.from(fileList).slice(0, maxFiles);
             if (fileList.length > maxFiles) this.showToast(`Maximum ${maxFiles} fichiers par ajout.`, 5000);
@@ -1927,10 +2111,16 @@ document.addEventListener('alpine:init', () => {
                 try {
                     this.showToast(`${file.name}...`);
                     const parsed = await window.sealarcaDocHandler.parseFile(file);
-                    const duplicate = await window.sealarcaDb.findDocumentByHash(this.activeFolderId, parsed.hash);
-                    const saved = duplicate || await window.sealarcaDb.saveDocument({ ...parsed, folderId: this.activeFolderId });
-                    if (!this.selectedDocumentIds.includes(saved.id)) this.selectedDocumentIds.push(saved.id);
-                    await this.loadDocuments();
+                    if (!await window.sealarcaDb.getFolder(folderId)) {
+                        this.showToast(this.t('documents.importFolderDeleted'), 7000);
+                        break;
+                    }
+                    const duplicate = await window.sealarcaDb.findDocumentByHash(folderId, parsed.hash);
+                    const saved = duplicate || await window.sealarcaDb.saveDocument({ ...parsed, folderId });
+                    if (this.activeFolderId === folderId) {
+                        if (!this.selectedDocumentIds.includes(saved.id)) this.selectedDocumentIds.push(saved.id);
+                        await this.loadDocuments();
+                    }
                     const warnings = this.extractionWarnings(saved);
                     if (warnings.length) this.showToast('⚠ ' + file.name + ': ' + warnings.join(' '), 10000);
                     else this.showToast(duplicate ? `↩️ ${file.name} déjà présent et sélectionné` : `✅ ${file.name}`);

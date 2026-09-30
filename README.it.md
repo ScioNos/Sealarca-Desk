@@ -2,6 +2,8 @@
 
 # 🛡️ Sealarca-Desk
 
+Le schede v3 distinguono validità e copertura completa, parziale o sconosciuta. Le analisi con copertura parziale o sconosciuta restano parziali. Le vecchie estrazioni XLSX/ODT si possono riparare esplicitamente e localmente dall'originale: identità e storico conservati, scheda precedente obsoleta, nessuna chiamata IA automatica. La ricerca usa un worker locale e una cache, con fallback cooperativo e ritardo di 150 ms. Le richieste POST con esito di rete indeterminato richiedono un nuovo tentativo esplicito; solo le preparazioni non inviate riprendono automaticamente. IndexedDB rimane v6.
+
 **Client browser locale autonomo per il gateway IA svizzero [Sealarca](https://sealarca.ch)**  
 *Preparazione locale dei documenti, selezione esplicita del contesto e accesso diretto al Vault.*
 
