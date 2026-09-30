@@ -5,26 +5,22 @@
         return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
     }
 
-    function dateOrder(value) {
+    function canonicalDate(value) {
         const text = String(value || '').trim();
         const makeStamp = (year, month, day) => {
             const parsed = new Date(Date.UTC(year, month - 1, day));
-            return year >= 1000 && parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day
-                ? parsed.getTime()
-                : NaN;
+            if (year < 1000 || parsed.getUTCFullYear() !== year || parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) return null;
+            return { key: `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`, stamp: parsed.getTime() };
         };
         let match = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+        if (match) return makeStamp(Number(match[1]), Number(match[2]), Number(match[3]));
+        match = text.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})$/);
         if (match) {
-            const stamp = makeStamp(Number(match[1]), Number(match[2]), Number(match[3]));
-            if (Number.isFinite(stamp)) return stamp;
+            return makeStamp(Number(match[3]), Number(match[2]), Number(match[1]));
         }
-        match = text.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
-        if (match) {
-            const stamp = makeStamp(Number(match[3]), Number(match[2]), Number(match[1]));
-            if (Number.isFinite(stamp)) return stamp;
-        }
-        const parsed = Date.parse(text);
-        return Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
+        match = text.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+        if (match) return makeStamp(Number(match[3]), Number(match[2]), Number(match[1]));
+        return null;
     }
 
     function sourceFor(document, sourceId, fallbackLabel) {
@@ -74,7 +70,8 @@
             const label = String(item.label || item.details || item.date || '').trim();
             if (!label) return;
             const date = String(item.date || item.deadline || '').trim();
-            const key = normalize(date) + '|' + normalize(label);
+            const parsedDate = canonicalDate(date);
+            const key = (parsedDate?.key || normalize(date)) + '|' + normalize(label);
             const sourceIds = Array.isArray(item.sourceIds) ? item.sourceIds : (item.references || []).map(reference => reference.sourceId).filter(Boolean);
             const entrySource = sourceIds[0] || null;
             const source = sourceFor(document, entrySource, item.references?.[0]?.label);
@@ -87,6 +84,7 @@
             eventsByKey.set(key, {
                 id: 'event_' + profile.documentId + '_' + (entrySource || normalize(date + label).replace(/[^a-z0-9]+/g, '_')),
                 date,
+                dateOrder: parsedDate?.stamp ?? Number.MAX_SAFE_INTEGER,
                 label,
                 details: String(item.details || '').trim(),
                 kinds: [kind],
@@ -117,7 +115,8 @@
             for (const event of profile.events || []) addTimelineItem(event, profile, document, 'event');
         }
 
-        const timeline = [...eventsByKey.values()].sort((left, right) => dateOrder(left.date) - dateOrder(right.date) || left.label.localeCompare(right.label));
+        const timeline = [...eventsByKey.values()].sort((left, right) => left.dateOrder - right.dateOrder || left.label.localeCompare(right.label));
+        for (const event of timeline) delete event.dateOrder;
         return { timeline, entities, analyzedDocumentCount: validProfiles.length, documentCount: (documents || []).length };
     }
 
@@ -186,9 +185,28 @@
         const sharedParties = [...appearances.values()]
             .filter(entity => entity.documentIds.length > 1)
             .map(entity => {
-                const collection = entity.kind === 'person' ? model.entities.people : model.entities.organizations;
-                const consolidated = collection.find(item => normalize(item.name) === normalize(entity.name));
-                return { ...entity, sources: (consolidated?.sources || []).map(source => ({ ...source })) };
+                const sourceCollection = entity.kind === 'person' ? model.entities.people : model.entities.organizations;
+                const sources = new Map();
+                for (const documentId of entity.documentIds) {
+                    const profile = validProfiles.find(item => item.documentId === documentId);
+                    if (!profile) continue;
+                    const document = documentsById.get(documentId);
+                    const detailed = (profile.entities || []).find(item => item.kind === entity.kind && normalize(item.name) === normalize(entity.name));
+                    const legacyValues = entity.kind === 'person' ? (profile.people || []) : (profile.organizations || []);
+                    const legacyPresent = legacyValues.some(item => normalize(typeof item === 'string' ? item : item?.name || '') === normalize(entity.name));
+                    const matchingSources = detailed?.sourceIds || [];
+                    for (const sourceId of matchingSources) {
+                        const source = sourceFor(document, sourceId, detailed?.references?.find(reference => reference.sourceId === sourceId)?.label);
+                        sources.set(`${source.documentId}:${source.sourceId || ''}`, source);
+                    }
+                    if (!matchingSources.length && legacyPresent) {
+                        const consolidated = sourceCollection.find(item => normalize(item.name) === normalize(entity.name));
+                        for (const source of (consolidated?.sources || []).filter(item => item.documentId === documentId)) {
+                            sources.set(`${source.documentId}:${source.sourceId || ''}`, source);
+                        }
+                    }
+                }
+                return { ...entity, sources: [...sources.values()].map(source => ({ ...source })) };
             })
             .sort((left, right) => left.name.localeCompare(right.name));
         return {

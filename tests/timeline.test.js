@@ -80,6 +80,35 @@ test('chronology orders Swiss day-month dates and retains each event source', ()
     assert.equal(result.timeline[1].sources[0].locator.page, 4);
 });
 
+test('chronology sorts mixed ISO and Swiss dates, including hyphenated Swiss dates', () => {
+    const timeline = loadTimeline();
+    const document = { id: 'mixed', name: 'mixed.pdf', sourceMap: [] };
+    const result = timeline.buildDossierModel([{
+        status: 'valid', documentId: 'mixed',
+        importantDates: [
+            { date: '01-02-2025', label: 'Swiss hyphen' },
+            { date: '2025-01-15', label: 'ISO' },
+            { date: '02.01.2025', label: 'Swiss dot' },
+            { date: 'not a date', label: 'Unknown' }
+        ]
+    }], [document]);
+    assert.deepEqual(Array.from(result.timeline, item => item.label), ['Swiss dot', 'ISO', 'Swiss hyphen', 'Unknown']);
+});
+
+test('chronology groups equivalent ISO and Swiss date representations', () => {
+    const timeline = loadTimeline();
+    const documents = [
+        { id: 'a', name: 'a.pdf', sourceMap: [{ id: 'pa', locator: { page: 1 } }] },
+        { id: 'b', name: 'b.pdf', sourceMap: [{ id: 'pb', locator: { page: 2 } }] }
+    ];
+    const result = timeline.buildDossierModel([
+        { status: 'valid', documentId: 'a', events: [{ date: '2025-02-01', label: 'Payment' }] },
+        { status: 'valid', documentId: 'b', events: [{ date: '01.02.2025', label: 'payment' }] }
+    ], documents);
+    assert.equal(result.timeline.length, 1);
+    assert.equal(result.timeline[0].date, '2025-02-01');
+});
+
 test('comparisons group amount values by a shared extracted label', () => {
     const timeline = loadTimeline();
     const documents = [
@@ -119,4 +148,20 @@ test('dossier summaries consolidate profile coverage, extracted facts, and parti
     assert.deepEqual(Array.from(summary.sharedParties, item => item.name), ['Ada Lovelace', 'Example SA']);
     assert.deepEqual(Array.from(summary.sharedParties[0].documentNames), ['a.pdf', 'b.pdf']);
     assert.deepEqual(Array.from(summary.sharedParties[0].sources, item => item.locator.page), [1, 2]);
+});
+
+test('shared parties retain source references across profile name casing variants', () => {
+    const timeline = loadTimeline();
+    const documents = [
+        { id: 'a', name: 'a.pdf', sourceMap: [{ id: 'pa', locator: { page: 1 } }] },
+        { id: 'b', name: 'b.pdf', sourceMap: [{ id: 'pb', locator: { page: 2 } }] }
+    ];
+    const summary = timeline.buildDossierSummary([
+        { status: 'valid', documentId: 'a', people: ['Ada Lovelace'], entities: [{ kind: 'person', name: 'Ada Lovelace', sourceIds: [] }] },
+        { status: 'valid', documentId: 'b', people: ['ada lovelace'], entities: [{ kind: 'person', name: 'ada lovelace', sourceIds: ['pb'] }] }
+    ], documents);
+    assert.equal(summary.sharedParties.length, 1);
+    assert.deepEqual(Array.from(summary.sharedParties[0].sources, source => source.documentId), ['b']);
+    assert.equal(summary.sharedParties[0].sources[0].sourceId, 'pb');
+    assert.equal(summary.sharedParties[0].sources[0].locator.page, 2);
 });
