@@ -6,7 +6,7 @@
 *Preparación local de documentos, selección explícita del contexto y acceso directo al Vault.*
 
 [![Licencia: PolyForm Perimeter 1.0.1](https://img.shields.io/badge/Licencia-PolyForm%20Perimeter%201.0.1-087F68.svg)](LICENSE)
-[![Versión: v1.1.0](https://img.shields.io/badge/Versión-v1.1.0-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.1.0)
+[![Versión: v1.2.0](https://img.shields.io/badge/Versión-v1.2.0-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.2.0)
 
 🌐 **Language / Langue / Sprache / Lingua / Idioma**  
 [English 🇬🇧](README.md) · [Français 🇫🇷](README.fr.md) · [Deutsch 🇩🇪](README.de.md) · [Italiano 🇮🇹](README.it.md) · **Español**
@@ -15,7 +15,7 @@
 
 ## Descripción general
 
-Sealarca-Desk es una aplicación estática de una sola página para chat y trabajo documental con Sealarca Vault. La interfaz y todas las bibliotecas de ejecución se cargan localmente; el descubrimiento de modelos, las respuestas de chat y los perfiles documentales generados por IA requieren conexión al endpoint fijo `https://sealarca.ch/v1`.
+Sealarca-Desk es una aplicación estática de una sola página para chat y trabajo documental con Sealarca Vault. La interfaz y todas las bibliotecas de ejecución se cargan localmente; el descubrimiento de modelos, las respuestas de chat y los perfiles documentales generados por IA requieren conexión al endpoint fijo `https://api.sealarca.ch/v1`.
 
 El programa no utiliza un backend de aplicación intermedio, SDK de analítica ni CDN durante la ejecución.
 
@@ -30,6 +30,8 @@ El programa no utiliza un backend de aplicación intermedio, SDK de analítica n
 - **Modo de contexto manual** para elegir los documentos enviados con la siguiente solicitud.
 - **Modo de contexto automático** que clasifica localmente los documentos de la carpeta y envía extractos pertinentes y citables de hasta 5 documentos.
 - **Área documental** con búsqueda local de texto completo, vista previa del Markdown canónico, referencias de origen, descarga del archivo original, resumen de la carpeta y exportación del resumen como `index.md`.
+- **Análisis del expediente** a partir de fichas locales actualizadas: resumen, cronología, partes, obligaciones, importes, comparaciones y diferencias aparentes. Los resultados enlazan con fuentes y deben verificarse. Estas acciones no envían contenido documental; la generación de fichas sigue siendo explícita por documento.
+- **Historial de operaciones y trazas** con pasos, avisos, cancelación/reintento cuando sea posible y referencias de origen para respuestas del chat y análisis locales. El modo de contexto se puede ajustar por carpeta.
 - **Perfiles documentales generados por IA** (resumen, personas, organizaciones, fechas y elementos importantes), procesados mediante una cola persistente de dos workers con reintentos, cancelación, deduplicación y recuperación tras una interrupción. La generación envía el Markdown del documento al modelo Sealarca elegido.
 - **Integración con Responses API**: descubrimiento dinámico mediante `GET /v1/models`; solicitudes con y sin streaming mediante `POST /v1/responses`, con `store: false`, timeout deslizante de 120 segundos, backoff HTTP y cancelación para chat más perfiles.
 - **Salida en streaming** con panel de razonamiento cuando la pasarela emite eventos de resumen de razonamiento compatibles.
@@ -40,10 +42,10 @@ El programa no utiliza un backend de aplicación intermedio, SDK de analítica n
 ## Modelo de datos y red
 
 - La clave API se conserva en `sessionStorage` durante la pestaña/sesión actual y se elimina del almacenamiento IndexedDB antiguo durante la migración.
-- Conversaciones, mensajes, carpetas, documentos, perfiles, trabajos de procesamiento, roles, idioma, modelo y preferencias de UI se guardan localmente en IndexedDB. El tema se guarda en `localStorage`.
+- Conversaciones, mensajes, carpetas, documentos, perfiles, trabajos de procesamiento, operaciones, trazas de metadatos, roles, idioma, modelo y preferencias de UI se guardan localmente en IndexedDB. El tema se guarda en `localStorage`. Las exportaciones `6.0` incluyen operaciones y trazas, que guardan referencias y recuentos, no texto documental.
 - Las solicitudes de chat envían el historial textual y únicamente los documentos seleccionados manualmente o los extractos elegidos automáticamente.
 - Los trabajos de perfil envían el Markdown del documento correspondiente al modelo Sealarca seleccionado.
-- Las llamadas API de la aplicación se dirigen a `https://sealarca.ch/v1`. La CSP también permite orígenes locales de desarrollo en `localhost` y `127.0.0.1`.
+- Las llamadas API de la aplicación se dirigen a `https://api.sealarca.ch/v1`. La CSP también permite orígenes locales de desarrollo en `localhost` y `127.0.0.1`.
 - “Local” y “sin CDN” describen la carga, el análisis, la indexación y el almacenamiento; las operaciones de IA no funcionan sin conexión.
 
 ## Inicio rápido
@@ -65,10 +67,12 @@ Sealarca-Desk/
 ├── js/
 │   ├── boot-theme.js          # Aplica el tema antes del renderizado
 │   ├── i18n.js                # Diccionarios para cinco idiomas
-│   ├── db.js                  # Esquema IndexedDB v5 y persistencia
+│   ├── db.js                  # Esquema IndexedDB v6 y persistencia
 │   ├── doc-handler.js         # Extracción local, Markdown y procedencia
 │   ├── api.js                 # Cliente fijo de Sealarca Responses API
 │   ├── p1.js                  # Búsqueda, perfiles, citas y cola persistente
+│   ├── operations.js          # Ciclo de vida de operaciones y trazas
+│   ├── timeline.js            # Cronología y comparaciones locales
 │   └── app.js                 # Estado Alpine.js y flujos de la aplicación
 ├── vendor/                    # Alpine CSP, JSZip, Marked, DOMPurify, PDF.js
 ├── tests/                     # Pruebas Node.js

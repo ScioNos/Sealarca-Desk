@@ -1,11 +1,11 @@
 {
   "name": "sealarca-desk",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "Client local source available pour Sealarca Vault avec dossiers et bibliothèque documentaire Markdown",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "check": "node --check js/i18n.js && node --check js/db.js && node --check js/doc-handler.js && node --check js/api.js && node --check js/p1.js && node --check js/app.js && node --check scripts/build-vendor.js && node --test tests/*.test.js",
+    "check": "node --check js/i18n.js && node --check js/db.js && node --check js/doc-handler.js && node --check js/api.js && node --check js/p1.js && node --check js/operations.js && node --check js/timeline.js && node --check js/app.js && node --check scripts/build-vendor.js && node --test tests/*.test.js",
     "vendor:build": "node scripts/build-vendor.js",
     "release:build": "npm run vendor:build && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1"
   },

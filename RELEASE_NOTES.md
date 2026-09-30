@@ -1,4 +1,29 @@
-# Sealarca Desk v1.1.0
+# Sealarca Desk v1.2.0
+
+Release date: **September 29, 2026**.
+
+This release adds a local multi-document dossier workspace. It preserves the 1.1.0 browser workspace and upgrades IndexedDB from v5 to v6 without deleting or rewriting existing records. The API endpoint and protocol remain unchanged.
+
+## Changes
+
+- Run dossier summaries, timelines, entity/party lists, obligation lists, amount lists, comparisons, and apparent-difference checks over current profiles already stored in the browser. Results are labeled as unverified and link to their source locations.
+- Track operations with persistent status, four progress steps, notices, cancellation, retry, stale-run recovery, and a metadata-only provenance trace. Chat answer traces also record the documents and references used.
+- Keep folder actions local. Traces store document/source IDs, locators, counts, and notices, not document text. Generating a profile remains an explicit action for a document; its Markdown is sent to the selected Sealarca model as in prior releases.
+- Add per-folder manual/automatic chat-context overrides, clear document/profile status chips, profile amount/obligation details, and a richer `index.md` dossier export.
+- Upgrade IndexedDB to v6 with `operations` and `traces` stores; export/import format is `6.0`. Existing profiles created with the v1 prompt fingerprint are marked stale and can be regenerated explicitly.
+- Expand profile schema/prompt v2 to capture sourced entities, dates, events, amounts, obligations, and important items. Keep the existing 120,000-character/100-source profile bounds and 250,000-character chat-context limit.
+
+## Verification
+
+The release checks cover v5-to-v6 migration, export/import, cross-tab operation leases, trace persistence, source filtering, dossier aggregation, profile normalization, the five interface languages, and the full `npm run check` suite.
+
+## Download and verification
+
+Build `Sealarca-Desk-v1.2.0.zip` with `npm run release:build` and compare it with the generated `Sealarca-Desk-v1.2.0.sha256` checksum. No API key or customer document is included in the distribution.
+
+---
+
+## Previous release: v1.1.0
 
 Release date: **September 28, 2026**.
 
@@ -24,4 +49,4 @@ The audit also noted that a retry after a network failure may duplicate a billab
 
 Extract `Sealarca-Desk-v1.1.0.zip` and open `Sealarca-Desk/index.html`. Compare the archive SHA-256 with `Sealarca-Desk-v1.1.0.sha256`.
 
-Desk continues to use `https://sealarca.ch/v1`. No key or customer document is included in the distribution. Source available under PolyForm Perimeter License 1.0.1.
+Desk continues to use `https://api.sealarca.ch/v1`. No key or customer document is included in the distribution. Source available under PolyForm Perimeter License 1.0.1.

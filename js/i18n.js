@@ -71,7 +71,7 @@ const SEALARCA_I18N = {
             closeBtn: "Fermer",
             networkError: "Impossible de joindre Sealarca. Vérifiez votre connexion. Si votre organisation bloque les pages file://, demandez à votre service informatique d’autoriser cette page locale.",
             endpointLabel: "Endpoint API",
-            endpointHint: "Par défaut : https://sealarca.ch/v1",
+            endpointHint: "Par défaut : https://api.sealarca.ch/v1",
             modelsTitle: "Modèles disponibles pour cet accès Sealarca",
             modelsHint: "La liste est chargée automatiquement depuis votre accès Sealarca. Vous pouvez changer de modèle à tout moment.",
             testBtn: "Vérifier la clé et charger les modèles",
@@ -188,7 +188,7 @@ const SEALARCA_I18N = {
             closeBtn: "Schließen",
             networkError: "Sealarca ist nicht erreichbar. Prüfen Sie Ihre Verbindung. Falls Ihre Organisation file://-Seiten blockiert, lassen Sie diese lokale Seite durch Ihre IT freigeben.",
             endpointLabel: "API-Endpunkt",
-            endpointHint: "Standard: https://sealarca.ch/v1",
+            endpointHint: "Standard: https://api.sealarca.ch/v1",
             modelsTitle: "Modelle für diesen Sealarca-Zugang",
             modelsHint: "Die Liste wird automatisch aus Ihrem Sealarca-Zugang geladen. Sie können das Modell jederzeit ändern.",
             testBtn: "Schlüssel prüfen und Modelle laden",
@@ -305,7 +305,7 @@ const SEALARCA_I18N = {
             closeBtn: "Chiudi",
             networkError: "Impossibile contattare Sealarca. Verificate la connessione. Se l’organizzazione blocca le pagine file://, chiedete all’IT di autorizzare questa pagina locale.",
             endpointLabel: "Endpoint API",
-            endpointHint: "Predefinito: https://sealarca.ch/v1",
+            endpointHint: "Predefinito: https://api.sealarca.ch/v1",
             modelsTitle: "Modelli disponibili per questo accesso Sealarca",
             modelsHint: "L’elenco viene caricato automaticamente dal tuo accesso Sealarca. Puoi cambiare modello in qualsiasi momento.",
             testBtn: "Verificare la chiave e caricare i modelli",
@@ -422,7 +422,7 @@ const SEALARCA_I18N = {
             closeBtn: "Close",
             networkError: "Sealarca could not be reached. Check your connection. If your organization blocks file:// pages, ask your IT team to allow this local page.",
             endpointLabel: "API Endpoint",
-            endpointHint: "Default: https://sealarca.ch/v1",
+            endpointHint: "Default: https://api.sealarca.ch/v1",
             modelsTitle: "Models available for this Sealarca access",
             modelsHint: "The list is loaded automatically from your Sealarca access. You can change models at any time.",
             testBtn: "Verify the key and load models",
@@ -539,7 +539,7 @@ const SEALARCA_I18N = {
             closeBtn: "Cerrar",
             networkError: "No se puede contactar con Sealarca. Compruebe la conexión. Si su organización bloquea páginas file://, pida a TI que autorice esta página local.",
             endpointLabel: "Endpoint API",
-            endpointHint: "Por defecto: https://sealarca.ch/v1",
+            endpointHint: "Por defecto: https://api.sealarca.ch/v1",
             modelsTitle: "Modelos disponibles para este acceso de Sealarca",
             modelsHint: "La lista se carga automáticamente desde su acceso de Sealarca. Puede cambiar de modelo en cualquier momento.",
             testBtn: "Verificar la clave y cargar los modelos",
@@ -599,7 +599,24 @@ const SEALARCA_I18N_FALLBACKS = {
         'app.profilesQueued': '{count} fiche(s) ajoutée(s) à la queue.',
         'app.profilesUpToDate': 'Toutes les fiches sont déjà à jour.',
         'settings.noModels': 'Aucun modèle disponible pour cette clé API.',
-        'documents.pagesUnavailable': 'Pages non disponibles'
+        'documents.pagesUnavailable': 'Pages non disponibles',
+        'documents.pagesUnit': 'pages',
+        dossier: {
+            actionsTitle: 'Actions du dossier', timelineTitle: 'Chronologie', timelineTab: 'Chronologie', timelineEmpty: 'Aucun événement extrait des fiches disponibles.',
+            operationsTitle: 'Opérations récentes', operationsEmpty: 'Aucune opération dans ce dossier.', advancedOptions: 'Options du dossier',
+            folderContextSetting: 'Contexte des prochaines demandes', inheritContextSetting: 'Suivre le réglage général', manualContextSetting: 'Manuel', automaticContextSetting: 'Automatique local',
+            profileCoverage: '{ready} fiches à jour sur {total} documents', localActionHelp: 'Ces actions regroupent uniquement les fiches locales des documents sélectionnés, ou de tout le dossier si aucun n’est sélectionné. Elles n’envoient pas de nouveau contenu. Générer une fiche reste une action explicite.',
+            summaryLocalTitle: 'Synthèse locale', summarySharedTitle: 'Éléments communs', summaryOverview: '{profiles} fiches à jour sur {documents} documents : {events} événements, {people} personnes, {organizations} organisations, {amounts} montants et {obligations} obligations. Comparaison : {divergences} différences apparentes à vérifier.', summarySharedEntities: '{count} personnes ou organisations apparaissent dans plusieurs fiches : {items}.',
+            cancelOperation: 'Annuler', retryOperation: 'Relancer', openResult: 'Ouvrir les résultats', entitiesTitle: 'Parties et organisations', amountsTitle: 'Montants', obligationsTitle: 'Obligations', amountsEmpty: 'Aucun montant dans les fiches disponibles.', obligationsEmpty: 'Aucune obligation dans les fiches disponibles.',
+            extractionUnverified: 'Extraction à vérifier dans le document source.', dateUnknown: 'Date non précisée', progress: '{done} étapes terminées sur {total}', localOnly: 'Traitement local · aucune donnée envoyée',
+            traceSummary: '{documents} documents · {sources} références · {characters} caractères de contexte', traceIncluded: '{count} références retenues', traceOmitted: 'Document non retenu', showTrace: 'Afficher les sources utilisées', hideTrace: 'Masquer les sources utilisées',
+            localActionEmpty: 'Aucun contenu exploitable dans les fiches sélectionnées.', operationAlreadyRunning: 'Une opération est déjà en cours pour ce dossier.', noDocuments: 'Ajoutez un document avant de lancer une action.', operationFailed: 'L’opération a échoué. Consultez son journal pour les détails.',
+            actions: { summary: 'Synthèse', timeline: 'Construire la chronologie', entities: 'Lister les parties', obligations: 'Examiner les obligations', compare: 'Comparer les informations', divergences: 'Repérer les différences apparentes', amounts: 'Lister les montants' },
+            steps: { prepare: 'Préparer le dossier', context: 'Charger les fiches locales', analyze: 'Regrouper les éléments', save: 'Enregistrer les résultats et les références' },
+            stepDetails: { documents: '{count} document(s) retenu(s)', profiles: '{count} fiche(s) à jour sur {total} document(s)', results: '{count} élément(s) · {sources} référence(s)' },
+            status: { pending: 'En attente', running: 'En cours', completed: 'Terminée', partial: 'Partielle', failed: 'Échec', cancelled: 'Annulée', warning: 'À vérifier', processing: 'Fiche en cours', ready: 'Fiche prête', not_analyzed: 'Fiche à générer', error: 'Erreur de fiche' },
+            notices: { document_limit_reached: 'La limite de {limit} documents a été atteinte.', operation_busy: 'Une autre session traite déjà cette opération.', profiles_missing: '{count} document(s) sans fiche à jour ont été ignorés.', operation_cancelled: 'Opération annulée.', document_deleted: 'Document supprimé; opération en attente annulée. Son résultat historique est conservé.', operation_failed: 'L’opération n’a pas pu aboutir.', operation_interrupted: 'Le navigateur a été fermé pendant cette opération.', response_interrupted: 'La réponse du modèle a été interrompue.', document_not_in_context: 'Document ignoré car aucun extrait admissible n’a été retenu.', context_limit_reached: 'La limite de contexte de {limit} caractères a été atteinte.', unknown_notice: 'Un point demande votre attention.' }
+        }
     },
     de: {
         'app.streamTimeout': '120 Sekunden lang wurden keine Daten empfangen; die Generierung wurde unterbrochen. Mit kleinerem Kontext erneut versuchen.',
@@ -608,7 +625,24 @@ const SEALARCA_I18N_FALLBACKS = {
         'app.profilesQueued': '{count} Profil(e) zur Warteschlange hinzugefügt.',
         'app.profilesUpToDate': 'Alle Profile sind bereits aktuell.',
         'settings.noModels': 'Kein Modell für diesen API-Schlüssel verfügbar.',
-        'documents.pagesUnavailable': 'Seiten nicht verfügbar'
+        'documents.pagesUnavailable': 'Seiten nicht verfügbar',
+        'documents.pagesUnit': 'Seiten',
+        dossier: {
+            actionsTitle: 'Aktionen für den Ordner', timelineTitle: 'Zeitachse', timelineTab: 'Zeitachse', timelineEmpty: 'Aus den verfügbaren Profilen wurden keine Ereignisse extrahiert.',
+            operationsTitle: 'Letzte Vorgänge', operationsEmpty: 'Keine Vorgänge in diesem Ordner.', advancedOptions: 'Ordnereinstellungen',
+            folderContextSetting: 'Kontext für nächste Anfragen', inheritContextSetting: 'Allgemeine Einstellung übernehmen', manualContextSetting: 'Manuell', automaticContextSetting: 'Automatisch lokal',
+            profileCoverage: '{ready} von {total} Dokumentprofilen aktuell', localActionHelp: 'Diese Aktionen fassen nur lokale Profile der ausgewählten Dokumente oder des ganzen Ordners zusammen, wenn nichts ausgewählt ist. Dabei werden keine neuen Inhalte gesendet. Ein Profil wird ausdrücklich gestartet.',
+            summaryLocalTitle: 'Lokale Zusammenfassung', summarySharedTitle: 'Gemeinsame Angaben', summaryOverview: '{profiles} aktuelle Profile aus {documents} Dokumenten: {events} Ereignisse, {people} Personen, {organizations} Organisationen, {amounts} Beträge und {obligations} Pflichten. Vergleich: {divergences} mögliche Unterschiede zur Prüfung.', summarySharedEntities: '{count} Personen oder Organisationen kommen in mehreren Profilen vor: {items}.',
+            cancelOperation: 'Abbrechen', retryOperation: 'Erneut starten', openResult: 'Ergebnisse öffnen', entitiesTitle: 'Parteien und Organisationen', amountsTitle: 'Beträge', obligationsTitle: 'Pflichten', amountsEmpty: 'In den verfügbaren Profilen wurden keine Beträge gefunden.', obligationsEmpty: 'In den verfügbaren Profilen wurden keine Pflichten gefunden.',
+            extractionUnverified: 'Extraktion im Quelldokument prüfen.', dateUnknown: 'Kein Datum angegeben', progress: '{done} von {total} Schritten abgeschlossen', localOnly: 'Lokal verarbeitet · keine Daten gesendet',
+            traceSummary: '{documents} Dokumente · {sources} Verweise · {characters} Kontextzeichen', traceIncluded: '{count} Verweise berücksichtigt', traceOmitted: 'Dokument nicht berücksichtigt', showTrace: 'Verwendete Quellen anzeigen', hideTrace: 'Verwendete Quellen ausblenden',
+            localActionEmpty: 'Die ausgewählten Profile enthalten keine verwendbaren Angaben.', operationAlreadyRunning: 'Für diesen Ordner läuft bereits ein Vorgang.', noDocuments: 'Fügen Sie vor einer Aktion ein Dokument hinzu.', operationFailed: 'Der Vorgang ist fehlgeschlagen. Weitere Informationen stehen im Protokoll.',
+            actions: { summary: 'Zusammenfassung', timeline: 'Zeitachse erstellen', entities: 'Parteien auflisten', obligations: 'Pflichten prüfen', compare: 'Angaben vergleichen', divergences: 'Mögliche Abweichungen finden', amounts: 'Beträge auflisten' },
+            steps: { prepare: 'Ordner vorbereiten', context: 'Lokale Profile laden', analyze: 'Angaben zusammenführen', save: 'Ergebnisse und Quellen speichern' },
+            stepDetails: { documents: '{count} Dokument(e) berücksichtigt', profiles: '{count} aktuelle Profile aus {total} Dokumenten', results: '{count} Einträge · {sources} Verweise' },
+            status: { pending: 'Ausstehend', running: 'In Bearbeitung', completed: 'Abgeschlossen', partial: 'Teilweise', failed: 'Fehlgeschlagen', cancelled: 'Abgebrochen', warning: 'Prüfen', processing: 'Profil wird erstellt', ready: 'Profil bereit', not_analyzed: 'Profil erstellen', error: 'Profilfehler' },
+            notices: { document_limit_reached: 'Die Grenze von {limit} Dokumenten wurde erreicht.', operation_busy: 'Eine andere Sitzung bearbeitet diesen Vorgang bereits.', profiles_missing: '{count} Dokument(e) ohne aktuelles Profil wurden übersprungen.', operation_cancelled: 'Vorgang abgebrochen.', document_deleted: 'Dokument gelöscht; ausstehender Vorgang abgebrochen. Das historische Ergebnis bleibt erhalten.', operation_failed: 'Der Vorgang konnte nicht abgeschlossen werden.', operation_interrupted: 'Der Browser wurde während dieses Vorgangs geschlossen.', response_interrupted: 'Die Modellantwort wurde unterbrochen.', document_not_in_context: 'Dokument ausgelassen, weil kein geeigneter Auszug ausgewählt wurde.', context_limit_reached: 'Die Kontextgrenze von {limit} Zeichen wurde erreicht.', unknown_notice: 'Ein Hinweis erfordert Ihre Aufmerksamkeit.' }
+        }
     },
     it: {
         'app.streamTimeout': 'Nessun dato ricevuto per 120 secondi; generazione interrotta. Riprova con un contesto ridotto.',
@@ -617,7 +651,24 @@ const SEALARCA_I18N_FALLBACKS = {
         'app.profilesQueued': '{count} scheda(e) aggiunta(e) alla coda.',
         'app.profilesUpToDate': 'Tutti i profili sono già aggiornati.',
         'settings.noModels': 'Nessun modello disponibile per questa chiave API.',
-        'documents.pagesUnavailable': 'Pagine non disponibili'
+        'documents.pagesUnavailable': 'Pagine non disponibili',
+        'documents.pagesUnit': 'pagine',
+        dossier: {
+            actionsTitle: 'Azioni della cartella', timelineTitle: 'Cronologia', timelineTab: 'Cronologia', timelineEmpty: 'Nessun evento estratto dai profili disponibili.',
+            operationsTitle: 'Operazioni recenti', operationsEmpty: 'Nessuna operazione in questa cartella.', advancedOptions: 'Opzioni della cartella',
+            folderContextSetting: 'Contesto per le prossime richieste', inheritContextSetting: 'Usa l’impostazione generale', manualContextSetting: 'Manuale', automaticContextSetting: 'Automatico locale',
+            profileCoverage: '{ready} profili aggiornati su {total} documenti', localActionHelp: 'Queste azioni raggruppano solo i profili locali dei documenti selezionati o dell’intera cartella se non c’è una selezione. Non inviano nuovi contenuti. La generazione del profilo è esplicita.',
+            summaryLocalTitle: 'Sintesi locale', summarySharedTitle: 'Elementi comuni', summaryOverview: '{profiles} profili aggiornati su {documents} documenti: {events} eventi, {people} persone, {organizations} organizzazioni, {amounts} importi e {obligations} obblighi. Confronto: {divergences} possibili differenze da verificare.', summarySharedEntities: '{count} persone o organizzazioni compaiono in più profili: {items}.',
+            cancelOperation: 'Annulla', retryOperation: 'Riprova', openResult: 'Apri i risultati', entitiesTitle: 'Parti e organizzazioni', amountsTitle: 'Importi', obligationsTitle: 'Obblighi', amountsEmpty: 'Nessun importo nei profili disponibili.', obligationsEmpty: 'Nessun obbligo nei profili disponibili.',
+            extractionUnverified: 'Verificare l’estrazione nel documento originale.', dateUnknown: 'Data non specificata', progress: '{done} passaggi completati su {total}', localOnly: 'Elaborazione locale · nessun dato inviato',
+            traceSummary: '{documents} documenti · {sources} riferimenti · {characters} caratteri di contesto', traceIncluded: '{count} riferimenti inclusi', traceOmitted: 'Documento escluso', showTrace: 'Mostra le fonti usate', hideTrace: 'Nascondi le fonti usate',
+            localActionEmpty: 'I profili selezionati non contengono informazioni utilizzabili.', operationAlreadyRunning: 'È già in corso un’operazione per questa cartella.', noDocuments: 'Aggiungi un documento prima di avviare un’azione.', operationFailed: 'Operazione non riuscita. Consulta il registro per i dettagli.',
+            actions: { summary: 'Sintesi', timeline: 'Crea cronologia', entities: 'Elenca le parti', obligations: 'Esamina gli obblighi', compare: 'Confronta le informazioni', divergences: 'Individua possibili differenze', amounts: 'Elenca gli importi' },
+            steps: { prepare: 'Prepara la cartella', context: 'Carica i profili locali', analyze: 'Raggruppa le informazioni', save: 'Salva risultati e riferimenti' },
+            stepDetails: { documents: '{count} documenti considerati', profiles: '{count} profili aggiornati su {total} documenti', results: '{count} elementi · {sources} riferimenti' },
+            status: { pending: 'In attesa', running: 'In corso', completed: 'Completata', partial: 'Parziale', failed: 'Non riuscita', cancelled: 'Annullata', warning: 'Da verificare', processing: 'Profilo in corso', ready: 'Profilo pronto', not_analyzed: 'Genera il profilo', error: 'Errore del profilo' },
+            notices: { document_limit_reached: 'È stato raggiunto il limite di {limit} documenti.', operation_busy: 'Un’altra sessione sta già elaborando questa operazione.', profiles_missing: 'Saltati {count} documenti senza un profilo aggiornato.', operation_cancelled: 'Operazione annullata.', document_deleted: 'Documento eliminato; l’operazione in attesa è stata annullata. La traccia storica è conservata.', operation_failed: 'Impossibile completare l’operazione.', operation_interrupted: 'Il browser è stato chiuso durante l’operazione.', response_interrupted: 'La risposta del modello è stata interrotta.', document_not_in_context: 'Documento escluso perché non è stato trovato un estratto utilizzabile.', context_limit_reached: 'Raggiunto il limite di contesto di {limit} caratteri.', unknown_notice: 'Un avviso richiede attenzione.' }
+        }
     },
     en: {
         'app.streamTimeout': 'No data was received for 120 seconds; generation was interrupted. Retry with a smaller context.',
@@ -626,7 +677,24 @@ const SEALARCA_I18N_FALLBACKS = {
         'app.profilesQueued': '{count} profile(s) added to the queue.',
         'app.profilesUpToDate': 'All profiles are already up to date.',
         'settings.noModels': 'No model available for this API key.',
-        'documents.pagesUnavailable': 'Pages unavailable'
+        'documents.pagesUnavailable': 'Pages unavailable',
+        'documents.pagesUnit': 'pages',
+        dossier: {
+            actionsTitle: 'Folder actions', timelineTitle: 'Timeline', timelineTab: 'Timeline', timelineEmpty: 'No events were extracted from the available profiles.',
+            operationsTitle: 'Recent operations', operationsEmpty: 'No operations in this folder.', advancedOptions: 'Folder options',
+            folderContextSetting: 'Context for future requests', inheritContextSetting: 'Use the general setting', manualContextSetting: 'Manual', automaticContextSetting: 'Automatic local',
+            profileCoverage: '{ready} of {total} document profiles are current', localActionHelp: 'These actions group only local profiles for selected documents, or the whole folder when nothing is selected. They send no new content. Generating a profile remains an explicit action.',
+            summaryLocalTitle: 'Local synthesis', summarySharedTitle: 'Shared items', summaryOverview: '{profiles} current profiles from {documents} documents: {events} events, {people} people, {organizations} organizations, {amounts} amounts, and {obligations} obligations. Comparison found {divergences} apparent differences to review.', summarySharedEntities: '{count} people or organizations appear in multiple profiles: {items}.',
+            cancelOperation: 'Cancel', retryOperation: 'Retry', openResult: 'Open results', entitiesTitle: 'People and organizations', amountsTitle: 'Amounts', obligationsTitle: 'Obligations', amountsEmpty: 'No amounts in the available profiles.', obligationsEmpty: 'No obligations in the available profiles.',
+            extractionUnverified: 'Check this extraction against the source document.', dateUnknown: 'Date not specified', progress: '{done} of {total} steps complete', localOnly: 'Processed locally · no data sent',
+            traceSummary: '{documents} documents · {sources} references · {characters} context characters', traceIncluded: '{count} references included', traceOmitted: 'Document not included', showTrace: 'Show sources used', hideTrace: 'Hide sources used',
+            localActionEmpty: 'The selected profiles contain no usable information.', operationAlreadyRunning: 'An operation is already running for this folder.', noDocuments: 'Add a document before starting an action.', operationFailed: 'The operation failed. See its log for details.',
+            actions: { summary: 'Summary', timeline: 'Build timeline', entities: 'List parties', obligations: 'Review obligations', compare: 'Compare information', divergences: 'Find apparent differences', amounts: 'List amounts' },
+            steps: { prepare: 'Prepare folder', context: 'Load local profiles', analyze: 'Group information', save: 'Save results and references' },
+            stepDetails: { documents: '{count} documents selected', profiles: '{count} current profiles from {total} documents', results: '{count} items · {sources} references' },
+            status: { pending: 'Pending', running: 'In progress', completed: 'Completed', partial: 'Partial', failed: 'Failed', cancelled: 'Cancelled', warning: 'Review needed', processing: 'Profile processing', ready: 'Profile ready', not_analyzed: 'Profile needed', error: 'Profile error' },
+            notices: { document_limit_reached: 'The limit of {limit} documents was reached.', operation_busy: 'Another session is already processing this operation.', profiles_missing: 'Skipped {count} document(s) without a current profile.', operation_cancelled: 'Operation cancelled.', document_deleted: 'Document deleted; the pending operation was cancelled. Its historical result is retained.', operation_failed: 'The operation could not be completed.', operation_interrupted: 'The browser closed while this operation was running.', response_interrupted: 'The model response was interrupted.', document_not_in_context: 'Document omitted because no usable excerpt was selected.', context_limit_reached: 'The context limit of {limit} characters was reached.', unknown_notice: 'An item needs your attention.' }
+        }
     },
     es: {
         'app.streamTimeout': 'No se recibieron datos durante 120 segundos; la generación se interrumpió. Reintente con un contexto reducido.',
@@ -635,16 +703,58 @@ const SEALARCA_I18N_FALLBACKS = {
         'app.profilesQueued': '{count} ficha(s) añadida(s) a la cola.',
         'app.profilesUpToDate': 'Todas las fichas ya están actualizadas.',
         'settings.noModels': 'Ningún modelo disponible para esta clave API.',
-        'documents.pagesUnavailable': 'Páginas no disponibles'
+        'documents.pagesUnavailable': 'Páginas no disponibles',
+        'documents.pagesUnit': 'páginas',
+        dossier: {
+            actionsTitle: 'Acciones de la carpeta', timelineTitle: 'Cronología', timelineTab: 'Cronología', timelineEmpty: 'No se extrajeron eventos de las fichas disponibles.',
+            operationsTitle: 'Operaciones recientes', operationsEmpty: 'No hay operaciones en esta carpeta.', advancedOptions: 'Opciones de la carpeta',
+            folderContextSetting: 'Contexto para próximas solicitudes', inheritContextSetting: 'Usar el ajuste general', manualContextSetting: 'Manual', automaticContextSetting: 'Automático local',
+            profileCoverage: '{ready} de {total} fichas de documentos están actualizadas', localActionHelp: 'Estas acciones agrupan solo fichas locales de los documentos seleccionados o de toda la carpeta si no hay selección. No envían contenido nuevo. Generar una ficha sigue siendo explícito.',
+            summaryLocalTitle: 'Síntesis local', summarySharedTitle: 'Elementos comunes', summaryOverview: '{profiles} fichas actualizadas de {documents} documentos: {events} eventos, {people} personas, {organizations} organizaciones, {amounts} importes y {obligations} obligaciones. La comparación señala {divergences} posibles diferencias que revisar.', summarySharedEntities: '{count} personas u organizaciones aparecen en varias fichas: {items}.',
+            cancelOperation: 'Cancelar', retryOperation: 'Reintentar', openResult: 'Abrir resultados', entitiesTitle: 'Partes y organizaciones', amountsTitle: 'Importes', obligationsTitle: 'Obligaciones', amountsEmpty: 'No hay importes en las fichas disponibles.', obligationsEmpty: 'No hay obligaciones en las fichas disponibles.',
+            extractionUnverified: 'Compruebe la extracción en el documento de origen.', dateUnknown: 'Fecha no especificada', progress: '{done} de {total} pasos completados', localOnly: 'Procesado localmente · no se enviaron datos',
+            traceSummary: '{documents} documentos · {sources} referencias · {characters} caracteres de contexto', traceIncluded: '{count} referencias incluidas', traceOmitted: 'Documento no incluido', showTrace: 'Mostrar fuentes utilizadas', hideTrace: 'Ocultar fuentes utilizadas',
+            localActionEmpty: 'Las fichas seleccionadas no contienen información utilizable.', operationAlreadyRunning: 'Ya hay una operación en curso en esta carpeta.', noDocuments: 'Añada un documento antes de iniciar una acción.', operationFailed: 'La operación falló. Consulte su registro para ver los detalles.',
+            actions: { summary: 'Resumen', timeline: 'Crear cronología', entities: 'Listar partes', obligations: 'Revisar obligaciones', compare: 'Comparar información', divergences: 'Detectar diferencias aparentes', amounts: 'Listar importes' },
+            steps: { prepare: 'Preparar carpeta', context: 'Cargar fichas locales', analyze: 'Agrupar información', save: 'Guardar resultados y referencias' },
+            stepDetails: { documents: '{count} documentos seleccionados', profiles: '{count} fichas actualizadas de {total} documentos', results: '{count} elementos · {sources} referencias' },
+            status: { pending: 'Pendiente', running: 'En curso', completed: 'Completada', partial: 'Parcial', failed: 'Fallida', cancelled: 'Cancelada', warning: 'Revisar', processing: 'Ficha en curso', ready: 'Ficha lista', not_analyzed: 'Generar ficha', error: 'Error de ficha' },
+            notices: { document_limit_reached: 'Se alcanzó el límite de {limit} documentos.', operation_busy: 'Otra sesión ya está procesando esta operación.', profiles_missing: 'Se omitieron {count} documentos sin una ficha actualizada.', operation_cancelled: 'Operación cancelada.', document_deleted: 'Documento eliminado; se canceló la operación pendiente. Se conserva su resultado histórico.', operation_failed: 'No se pudo completar la operación.', operation_interrupted: 'El navegador se cerró durante esta operación.', response_interrupted: 'La respuesta del modelo se interrumpió.', document_not_in_context: 'Documento omitido porque no se seleccionó ningún extracto adecuado.', context_limit_reached: 'Se alcanzó el límite de contexto de {limit} caracteres.', unknown_notice: 'Un aviso requiere atención.' }
+        }
     }
 };
+function mergeMissingTranslations(target, source) {
+    for (const [key, value] of Object.entries(source)) {
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+            target[key] = target[key] && typeof target[key] === 'object' ? target[key] : {};
+            mergeMissingTranslations(target[key], value);
+        } else if (typeof target[key] !== 'string') target[key] = value;
+    }
+}
 for (const [lang, entries] of Object.entries(SEALARCA_I18N_FALLBACKS)) {
     const root = SEALARCA_I18N[lang] || (SEALARCA_I18N[lang] = {});
     for (const [path, value] of Object.entries(entries)) {
-        const [group, key] = path.split('.');
-        root[group] = root[group] || {};
-        if (typeof root[group][key] !== 'string') root[group][key] = value;
+        if (typeof value === 'string' && path.includes('.')) {
+            const parts = path.split('.');
+            let target = root;
+            for (const part of parts.slice(0, -1)) {
+                target[part] = target[part] && typeof target[part] === 'object' ? target[part] : {};
+                target = target[part];
+            }
+            if (typeof target[parts[parts.length - 1]] !== 'string') target[parts[parts.length - 1]] = value;
+        } else mergeMissingTranslations(root, { [path]: value });
     }
 }
 
 window.SEALARCA_I18N = SEALARCA_I18N;
+
+const PROFILE_DATE_LABELS = {
+    fr: 'Dernière fiche : {date}',
+    de: 'Letztes Profil: {date}',
+    it: 'Ultimo profilo: {date}',
+    en: 'Last profile: {date}',
+    es: 'Última ficha: {date}'
+};
+for (const [language, label] of Object.entries(PROFILE_DATE_LABELS)) {
+    SEALARCA_I18N[language].documents.lastProfileDate = label;
+}

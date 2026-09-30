@@ -6,7 +6,7 @@
 *Local document preparation, explicit context selection, and direct Vault access.*
 
 [![License: PolyForm Perimeter 1.0.1](https://img.shields.io/badge/License-PolyForm%20Perimeter%201.0.1-087F68.svg)](LICENSE)
-[![Release: v1.1.0](https://img.shields.io/badge/Release-v1.1.0-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.1.0)
+[![Release: v1.2.0](https://img.shields.io/badge/Release-v1.2.0-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.2.0)
 
 🌐 **Language / Langue / Sprache / Lingua / Idioma**  
 **English** · [Français 🇫🇷](README.fr.md) · [Deutsch 🇩🇪](README.de.md) · [Italiano 🇮🇹](README.it.md) · [Español 🇪🇸](README.es.md)
@@ -15,7 +15,7 @@
 
 ## Overview
 
-Sealarca-Desk is a static single-page application for chat and document-assisted work with Sealarca Vault. The interface and all runtime libraries are loaded locally; model discovery, chat responses, and AI-generated document profiles require a network connection to the fixed API endpoint `https://sealarca.ch/v1`.
+Sealarca-Desk is a static single-page application for chat and document-assisted work with Sealarca Vault. The interface and all runtime libraries are loaded locally; model discovery, chat responses, and AI-generated document profiles require a network connection to the fixed API endpoint `https://api.sealarca.ch/v1`.
 
 No application backend, analytics SDK, or CDN is used by the runtime.
 
@@ -30,6 +30,8 @@ No application backend, analytics SDK, or CDN is used by the runtime.
 - **Manual context mode** to choose the documents sent with the next request.
 - **Automatic context mode** that ranks folder documents locally and sends relevant, citable excerpts from up to 5 documents.
 - **Document workspace** with local full-text search, canonical Markdown preview, source references, original-file download, folder overview, and `index.md` overview export.
+- **Dossier analysis** from current local profiles: summaries, chronology, parties, obligations, amounts, comparisons, and apparent differences. Results link to source locations and are marked for verification. These actions do not send document contents; profile generation remains an explicit per-document action.
+- **Operation history and traces** with progress steps, notices, cancellation/retry where applicable, and source manifests for chat responses and local dossier actions. Folder-level context mode can override the general setting.
 - **AI-generated document profiles** (summary, people, organizations, dates, and important items) processed through a persistent two-worker queue with retry, cancellation, deduplication, and recovery after interruption. Profile generation sends document Markdown to the selected Sealarca model.
 - **Responses API integration**: dynamic model discovery through `GET /v1/models`; streaming and non-streaming requests through `POST /v1/responses`, with `store: false`, sliding 120-second timeout, retryable HTTP backoff, and chat plus profile cancellation.
 - **Streaming output** with a reasoning drawer when the gateway emits supported reasoning-summary events.
@@ -41,9 +43,10 @@ No application backend, analytics SDK, or CDN is used by the runtime.
 
 - The API key is kept in `sessionStorage` for the current browser tab/session and is removed from legacy IndexedDB storage during migration.
 - Conversations, messages, folders, documents, document profiles, processing jobs, roles, language, selected model, and UI preferences are stored locally in IndexedDB. The theme is stored in `localStorage`.
+- Dossier operations and metadata-only traces are also stored locally in IndexedDB and included in `6.0` exports. Traces retain references and counts, not document text.
 - Chat requests send conversation text plus only the manually selected documents or automatically selected excerpts.
 - Document-profile jobs send the relevant document Markdown to the selected Sealarca model.
-- Application API calls target `https://sealarca.ch/v1`. The CSP also permits local development origins on `localhost` and `127.0.0.1`.
+- Application API calls target `https://api.sealarca.ch/v1`. The CSP also permits local development origins on `localhost` and `127.0.0.1`.
 - “Local” and “no CDN” describe application loading, parsing, indexing, and storage; AI operations are not offline.
 
 ## Quick start
@@ -71,10 +74,12 @@ Sealarca-Desk/
 ├── js/
 │   ├── boot-theme.js          # Applies the saved theme before rendering
 │   ├── i18n.js                # Five-language UI dictionaries
-│   ├── db.js                  # IndexedDB schema v5 and persistence APIs
+│   ├── db.js                  # IndexedDB schema v6 and persistence APIs
 │   ├── doc-handler.js         # Local extraction, canonical Markdown, provenance
 │   ├── api.js                 # Fixed Sealarca Responses API client
 │   ├── p1.js                  # Search, profiles, citations, persistent job queue
+│   ├── operations.js          # Operation lifecycle, notices and provenance traces
+│   ├── timeline.js            # Local dossier timeline and comparisons
 │   └── app.js                 # Alpine.js application state and workflows
 ├── vendor/
 │   ├── alpine-csp.min.js

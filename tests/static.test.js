@@ -29,6 +29,27 @@ test('l’endpoint API n’est pas configurable par l’utilisateur', () => {
     assert.doesNotMatch(app, /baseUrl\s*:/);
 });
 
+test('l’endpoint API fixe utilise api.sealarca.ch partout et la CSP l’autorise', () => {
+    const api = read('js/api.js');
+    const html = read('index.html');
+    const i18n = read('js/i18n.js');
+    assert.match(api, /https:\/\/api\.sealarca\.ch\/v1/);
+    assert.doesNotMatch(api, /https:\/\/sealarca\.ch\/v1/);
+    assert.match(html, /connect-src[^;]*https:\/\/api\.sealarca\.ch/);
+    assert.doesNotMatch(html, /connect-src[^;]*https:\/\/sealarca\.ch\//);
+    assert.ok(!html.includes('connect-src') || !/connect-src[^;]*\shttps:\/\/sealarca\.ch[\s"';]/.test(html));
+    assert.doesNotMatch(html, /https:\/\/sealarca\.ch\/v1/);
+    for (const hint of i18n.match(/https:\/\/[a-z0-9.-]+\/v1/g) || []) {
+        assert.equal(hint, 'https://api.sealarca.ch/v1');
+    }
+    for (const file of ['README.md', 'README.fr.md', 'README.de.md', 'README.it.md', 'README.es.md', 'SECURITY.md', 'RELEASE_NOTES.md']) {
+        const contents = read(file);
+        assert.doesNotMatch(contents, /https:\/\/sealarca\.ch\/v1/);
+    }
+    assert.match(read('README.md'), /https:\/\/api\.sealarca\.ch\/v1/);
+    assert.match(read('SECURITY.md'), /https:\/\/api\.sealarca\.ch\/v1/);
+});
+
 test('le rendu Markdown interdit les contenus actifs', () => {
     const app = read('js/app.js');
     const html = read('index.html');
@@ -84,12 +105,17 @@ test('les nouvelles chaînes de configuration et d’espace documentaire existen
     const required = {
         app: ['modelHint', 'roleHint'],
         settings: ['getKey', 'openKeys', 'prerequisitesTitle', 'stepOne', 'stepTwo', 'chooseModel', 'modelRequired', 'modelsHint', 'closeBtn', 'networkError'],
-        documents: ['workspaceSubtitle', 'manualMode', 'automaticMode', 'automaticHint', 'overviewTab', 'queueAction', 'statusPending', 'statusCancelled']
+        documents: ['workspaceSubtitle', 'manualMode', 'automaticMode', 'automaticHint', 'overviewTab', 'queueAction', 'statusPending', 'statusCancelled', 'pagesUnit', 'lastProfileDate'],
+        dossier: ['actionsTitle', 'timelineTitle', 'timelineTab', 'timelineEmpty', 'operationsTitle', 'operationsEmpty', 'localActionHelp', 'profileCoverage', 'traceSummary', 'extractionUnverified']
     };
     for (const language of ['fr', 'de', 'it', 'en', 'es']) {
         for (const group of Object.keys(required)) {
             for (const key of required[group]) assert.equal(typeof context.window.SEALARCA_I18N[language][group][key], 'string', `${language}.${group}.${key}`);
         }
+        for (const key of ['summary', 'timeline', 'entities', 'obligations', 'compare', 'divergences', 'amounts']) assert.equal(typeof context.window.SEALARCA_I18N[language].dossier.actions[key], 'string', `${language}.dossier.actions.${key}`);
+        for (const key of ['pending', 'running', 'completed', 'partial', 'failed', 'cancelled', 'ready', 'not_analyzed']) assert.equal(typeof context.window.SEALARCA_I18N[language].dossier.status[key], 'string', `${language}.dossier.status.${key}`);
+        assert.equal(typeof context.window.SEALARCA_I18N[language].dossier.notices.document_deleted, 'string', `${language}.dossier.notices.document_deleted`);
+        for (const key of ['documents', 'profiles', 'results']) assert.equal(typeof context.window.SEALARCA_I18N[language].dossier.stepDetails[key], 'string', `${language}.dossier.stepDetails.${key}`);
         const prerequisites = context.window.SEALARCA_I18N[language].settings.prerequisites;
         assert.equal(Array.isArray(prerequisites), true, `${language}.settings.prerequisites`);
         assert.equal(prerequisites.length, 3, `${language}.settings.prerequisites length`);
@@ -101,6 +127,33 @@ test('les nouvelles chaînes de configuration et d’espace documentaire existen
     assert.match(html, /settingsStepTwo/);
     assert.match(app, /commencer#desk/);
     assert.match(app, /hasVerifiedApiKey/);
+    assert.match(html, /doc\.pageLabel/);
+    assert.match(html, /doc\.profileAnalysisDateLabel/);
+});
+
+test('l’expérience de dossier consolide les fiches localement et garde des traces sourcées sans infrastructure fork', () => {
+    const html = read('index.html');
+    const app = read('js/app.js');
+    const operations = read('js/operations.js');
+    const timeline = read('js/timeline.js');
+    const localAction = app.slice(app.indexOf('async runFolderAnalysis'), app.indexOf('async cancelFolderOperation'));
+    assert.ok(fs.existsSync(path.join(root, 'css', 'document-experience.css')));
+    assert.match(html, /css\/document-experience\.css/);
+    assert.match(html, /js\/operations\.js\?v=1\.2\.0/);
+    assert.match(html, /js\/timeline\.js\?v=1\.2\.0/);
+    assert.ok(html.indexOf('js/operations.js') < html.indexOf('js/app.js'));
+    assert.match(html, /id="timeline-panel"/);
+    assert.match(html, /status-chip/);
+    assert.match(html, /step\.detailLabel/);
+    assert.match(operations, /function createTrace/);
+    assert.match(operations, /sourceIds/);
+    assert.match(timeline, /function buildDossierSummary/);
+    assert.match(localAction, /buildDossierSummary/);
+    assert.match(timeline, /apparent_difference/);
+    assert.doesNotMatch(localAction, /completeResponse|streamResponse|sealarcaApi/);
+    assert.doesNotMatch(operations + timeline, /\bmcp\b|researchStream|OpenCaseLaw/i);
+    assert.doesNotMatch(html, /mcp-plan|mcp-drawer/);
+    assert.doesNotMatch(html, /x-text="t\(/);
 });
 
 test('le premier écran explique le modèle et le rôle sans promesse géographique', () => {

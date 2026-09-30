@@ -6,7 +6,7 @@
 *Préparation documentaire locale, sélection explicite du contexte et accès direct au Vault.*
 
 [![Licence : PolyForm Perimeter 1.0.1](https://img.shields.io/badge/Licence-PolyForm%20Perimeter%201.0.1-087F68.svg)](LICENSE)
-[![Version : v1.1.0](https://img.shields.io/badge/Version-v1.1.0-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.1.0)
+[![Version : v1.2.0](https://img.shields.io/badge/Version-v1.2.0-137A52.svg)](https://github.com/ScioNos/Sealarca-Desk/releases/tag/v1.2.0)
 
 🌐 **Language / Langue / Sprache / Lingua / Idioma**  
 [English 🇬🇧](README.md) · **Français** · [Deutsch 🇩🇪](README.de.md) · [Italiano 🇮🇹](README.it.md) · [Español 🇪🇸](README.es.md)
@@ -15,7 +15,7 @@
 
 ## Présentation
 
-Sealarca-Desk est une application statique monopage de discussion et de travail documentaire avec Sealarca Vault. L’interface et toutes les bibliothèques d’exécution sont chargées localement ; la découverte des modèles, les réponses de chat et la génération des fiches documentaires nécessitent une connexion au point d’API fixe `https://sealarca.ch/v1`.
+Sealarca-Desk est une application statique monopage de discussion et de travail documentaire avec Sealarca Vault. L’interface et toutes les bibliothèques d’exécution sont chargées localement ; la découverte des modèles, les réponses de chat et la génération des fiches documentaires nécessitent une connexion au point d’API fixe `https://api.sealarca.ch/v1`.
 
 Le programme n’utilise ni serveur applicatif intermédiaire, ni SDK analytique, ni CDN à l’exécution.
 
@@ -30,6 +30,8 @@ Le programme n’utilise ni serveur applicatif intermédiaire, ni SDK analytique
 - **Mode de contexte manuel** pour choisir les documents envoyés avec la prochaine requête.
 - **Mode de contexte automatique** qui classe localement les documents du dossier et transmet des extraits pertinents et citables provenant de 5 documents au maximum.
 - **Espace documentaire** avec recherche plein texte locale, aperçu du Markdown canonique, références de source, téléchargement du fichier original, vue d’ensemble du dossier et export de cette vue en `index.md`.
+- **Analyse du dossier** à partir des fiches locales à jour : synthèse, chronologie, parties, obligations, montants, comparaisons et différences apparentes. Les résultats renvoient aux sources et sont à vérifier. Ces actions n’envoient pas le contenu des documents ; la génération d’une fiche reste une action explicite par document.
+- **Journal des opérations et traces** avec étapes, avis, annulation/reprise lorsque possible et références de provenance pour les réponses de chat et analyses locales. Le réglage du contexte peut être défini par dossier.
 - **Fiches documentaires générées par IA** (résumé, personnes, organisations, dates et éléments importants) traitées par une file persistante de deux workers avec reprise, annulation, déduplication et récupération après interruption. La génération d’une fiche envoie le Markdown du document au modèle Sealarca sélectionné.
 - **Intégration Responses API** : découverte dynamique via `GET /v1/models` ; requêtes streaming et non-streaming via `POST /v1/responses`, avec `store: false`, délai glissant de 120 secondes, reprises HTTP et annulation chat plus fiches.
 - **Réponse en streaming** avec tiroir de raisonnement lorsque la passerelle émet les événements de résumé de raisonnement pris en charge.
@@ -40,10 +42,10 @@ Le programme n’utilise ni serveur applicatif intermédiaire, ni SDK analytique
 ## Modèle de données et réseau
 
 - La clé API est conservée dans `sessionStorage` pour l’onglet/la session du navigateur et supprimée de l’ancien stockage IndexedDB lors de la migration.
-- Conversations, messages, dossiers, documents, fiches, jobs de traitement, rôles, langue, modèle choisi et préférences UI sont stockés localement dans IndexedDB. Le thème est stocké dans `localStorage`.
+- Conversations, messages, dossiers, documents, fiches, jobs de traitement, opérations, traces de métadonnées, rôles, langue, modèle choisi et préférences UI sont stockés localement dans IndexedDB. Le thème est stocké dans `localStorage`. Les exports `6.0` comprennent opérations et traces ; les traces gardent des références et des compteurs, pas le texte des documents.
 - Les requêtes de chat transmettent l’historique textuel ainsi que les seuls documents choisis manuellement ou extraits sélectionnés automatiquement.
 - Les jobs de fiche transmettent le Markdown du document concerné au modèle Sealarca sélectionné.
-- Les appels API applicatifs ciblent `https://sealarca.ch/v1`. La CSP autorise aussi les origines locales de développement sur `localhost` et `127.0.0.1`.
+- Les appels API applicatifs ciblent `https://api.sealarca.ch/v1`. La CSP autorise aussi les origines locales de développement sur `localhost` et `127.0.0.1`.
 - « Local » et « sans CDN » décrivent le chargement, l’analyse, l’indexation et le stockage ; les opérations IA ne fonctionnent pas hors connexion.
 
 ## Démarrage rapide
@@ -65,10 +67,12 @@ Sealarca-Desk/
 ├── js/
 │   ├── boot-theme.js          # Applique le thème avant le rendu
 │   ├── i18n.js                # Dictionnaires pour cinq langues
-│   ├── db.js                  # Schéma IndexedDB v5 et persistance
+│   ├── db.js                  # Schéma IndexedDB v6 et persistance
 │   ├── doc-handler.js         # Extraction locale, Markdown, provenance
 │   ├── api.js                 # Client Responses API Sealarca fixe
 │   ├── p1.js                  # Recherche, fiches, citations et file persistante
+│   ├── operations.js          # Cycle de vie des opérations et traces de provenance
+│   ├── timeline.js            # Chronologie et comparaisons locales du dossier
 │   └── app.js                 # État Alpine.js et parcours applicatifs
 ├── vendor/                    # Alpine CSP, JSZip, Marked, DOMPurify, PDF.js
 ├── tests/                     # Tests Node.js
