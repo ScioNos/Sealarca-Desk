@@ -58,6 +58,22 @@ test('fetchModels refuse une liste vide au lieu d’inventer un modèle', async 
     await assert.rejects(() => api.fetchModels('secret'), /Aucun modèle/);
 });
 
+test('model capabilities use only explicit boolean gateway metadata and preserve unknown states', async () => {
+    const api = loadApi(async () => new Response(JSON.stringify({ data: [
+        { id: 'vision-reasoning-structured-model' },
+        { id: 'plain', capabilities: { vision: true, reasoning: false, structured_output: true, unknown: true } },
+        { id: 'invalid', capabilities: { vision: 'true', reasoning: null } }
+    ] }), { status: 200 }));
+    const models = await api.fetchModels('secret');
+    const plain = models.find(model => model.id === 'plain');
+    assert.equal(api.getModelCapability(plain, 'vision'), true);
+    assert.equal(api.getModelCapability(plain, 'reasoning'), false);
+    assert.equal(api.getModelCapability(plain, 'structured_output'), true);
+    assert.equal(api.getModelCapability(plain, 'unknown'), null);
+    assert.equal(api.getModelCapability(models.find(model => model.id.startsWith('vision-')), 'vision'), null);
+    assert.equal(api.getModelCapability(models.find(model => model.id === 'invalid'), 'vision'), null);
+});
+
 test('streamResponse utilise /responses et consomme les événements typés', async () => {
     let request;
     const api = loadApi(async (url, options) => {

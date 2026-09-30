@@ -57,7 +57,8 @@ class SealarcaAPI {
                     name: this._formatModelLabel(cleanId),
                     description: typeof model === 'object' && typeof model.description === 'string' ? model.description : '',
                     created: typeof model === 'object' ? model.created : undefined,
-                    owned_by: typeof model === 'object' && typeof model.owned_by === 'string' ? model.owned_by : 'sealarca'
+                    owned_by: typeof model === 'object' && typeof model.owned_by === 'string' ? model.owned_by : 'sealarca',
+                    capabilities: this._normalizeModelCapabilities(model?.capabilities)
                 };
             })
             .filter(Boolean)
@@ -68,6 +69,21 @@ class SealarcaAPI {
         }
 
         return models;
+    }
+
+    // Unknown stays unknown: only explicit gateway metadata can describe a capability.
+    _normalizeModelCapabilities(metadata) {
+        const capabilities = {};
+        if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return capabilities;
+        for (const name of ['vision', 'reasoning', 'structured_output']) {
+            if (typeof metadata[name] === 'boolean') capabilities[name] = metadata[name];
+        }
+        return capabilities;
+    }
+
+    getModelCapability(model, capability) {
+        const value = model?.capabilities?.[capability];
+        return typeof value === 'boolean' ? value : null;
     }
 
     async streamResponse({

@@ -81,6 +81,7 @@
     }
 
     function createTrace({ folderId, conversationId = null, messageId = null, operation = null, manifest = {}, notices = [], model = null, now = Date.now() }) {
+        const snapshot = value => value == null ? null : JSON.parse(JSON.stringify(value));
         const documents = (manifest.documents || []).map(item => ({
             id: String(item.id || ''),
             name: String(item.name || 'Document'),
@@ -95,7 +96,7 @@
             documentName: String(item.documentName || 'Document'),
             sourceId: item.sourceId || null,
             reference: String(item.reference || item.documentName || 'Document'),
-            locator: item.locator && typeof item.locator === 'object' ? { ...item.locator } : null,
+            locator: item.locator && typeof item.locator === 'object' ? snapshot(item.locator) : null,
             characterCount: Number(item.characterCount) || 0
         })).filter(item => item.documentId);
         return {
@@ -106,10 +107,21 @@
             messageId,
             operationId: operation?.id || null,
             operationType: operation?.type || 'chat-answer',
+            operation: operation ? {
+                id: operation.id,
+                type: operation.type,
+                status: operation.status,
+                progress: snapshot(operation.progress),
+                steps: (operation.steps || []).map(step => ({ id: step.id, status: step.status, startedAt: step.startedAt, completedAt: step.completedAt, detail: snapshot(step.detail) })),
+                startedAt: operation.startedAt || null,
+                updatedAt: operation.updatedAt || null,
+                completedAt: operation.completedAt || null,
+                cancelledAt: operation.cancelledAt || null
+            } : null,
             createdAt: Number(now) || Date.now(),
             documents,
             sources,
-            notices: Array.isArray(notices) ? notices.map(item => ({ ...item })) : [],
+            notices: Array.isArray(notices) ? snapshot(notices) : [],
             model: model || null,
             context: {
                 mode: manifest.mode || 'manual',

@@ -13,6 +13,8 @@ desktop.ini
 *.log
 .env
 .env.local
+node_modules/
+.codegraph/
 
 # Artefacts de publication générés localement
 .release/

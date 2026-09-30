@@ -20,6 +20,29 @@ function loadTimeline() {
     return context.window.SealarcaTimeline;
 }
 
+test('events on the same page have distinct stable IDs and retain all source pages after consolidation', () => {
+    const timeline = loadTimeline();
+    const documents = [
+        { id: 'a', name: 'contract.pdf', sourceMap: [{ id: 'p1', locator: { page: 1 } }, { id: 'p2', locator: { page: 2 } }] },
+        { id: 'b', name: 'letter.pdf', sourceMap: [{ id: 'p3', locator: { page: 3 } }, { id: 'p4', locator: { page: 4 } }] }
+    ];
+    const profiles = [
+        { status: 'valid', documentId: 'a', events: [
+            { date: '2026-02-12', label: 'Signature', sourceIds: ['p1', 'p2', 'p1'] },
+            { date: '2026-02-13', label: 'Paiement', sourceIds: ['p1'] }
+        ] },
+        { status: 'valid', documentId: 'b', importantDates: [{ date: '12.02.2026', label: 'signature', sourceIds: ['p3', 'p4'] }] }
+    ];
+    const result = timeline.buildDossierModel(profiles, documents);
+    assert.equal(new Set(result.timeline.map(event => event.id)).size, 2);
+    assert.deepEqual(Array.from(result.timeline[0].sources, source => source.locator.page), [1, 2, 3, 4]);
+    const reordered = timeline.buildDossierModel([...profiles].reverse(), documents);
+    assert.equal(reordered.timeline[0].id, result.timeline[0].id);
+    assert.equal(result.entities.events.length, 2);
+    assert.equal(result.entities.dates.length, 2);
+    assert.equal(result.entities.events[0].confidence, 'unverified-extraction');
+});
+
 test('dossier timeline groups equivalent events and keeps source locations', () => {
     const timeline = loadTimeline();
     const documents = [
@@ -78,6 +101,24 @@ test('chronology orders Swiss day-month dates and retains each event source', ()
     }], [document]);
     assert.deepEqual(Array.from(result.timeline, item => item.label), ['Notice received', 'Contract signed']);
     assert.equal(result.timeline[1].sources[0].locator.page, 4);
+});
+
+test('comparisons preserve every source and group equivalent calendar dates and deadlines', () => {
+    const timeline = loadTimeline();
+    const documents = [
+        { id: 'a', name: 'contract.pdf', sourceMap: [{ id: 'p1', locator: { page: 1 } }, { id: 'p2', locator: { page: 2 } }] },
+        { id: 'b', name: 'letter.pdf', sourceMap: [{ id: 'p3', locator: { page: 3 } }] }
+    ];
+    const result = timeline.buildComparison([
+        { status: 'valid', documentId: 'a', importantDates: [{ label: 'Signature', date: '2026-02-12', sourceIds: ['p1', 'p2'] }], obligations: [{ label: 'Notice', deadline: '2026-02-12', sourceIds: ['p1', 'p2'] }] },
+        { status: 'valid', documentId: 'b', importantDates: [{ label: 'Signature', date: '12.02.2026', sourceIds: ['p3'] }], obligations: [{ label: 'Notice', deadline: '12.02.2026', sourceIds: ['p3'] }] }
+    ], documents);
+    assert.equal(result.divergences.length, 0);
+    assert.equal(result.comparisons.length, 2);
+    for (const comparison of result.comparisons) {
+        assert.equal(comparison.values.length, 1);
+        assert.deepEqual(Array.from(comparison.values[0].documents, source => source.locator.page), [1, 2, 3]);
+    }
 });
 
 test('chronology sorts mixed ISO and Swiss dates, including hyphenated Swiss dates', () => {

@@ -48,3 +48,23 @@ test('traces retain source metadata but never copy document or excerpt text', ()
     assert.equal(trace.createdAt, 200);
     assert.doesNotMatch(serialized, /PRIVATE SOURCE TEXT|PRIVATE EXCERPT/);
 });
+
+test('historical traces snapshot nested notices, locators and operation events without lease credentials', () => {
+    const operations = loadOperations();
+    const operation = operations.createOperation('timeline', 'folder');
+    operation.status = 'completed';
+    operation.leaseToken = 'SECRET LEASE';
+    operation.steps[0].detail = { counters: { documents: 2 } };
+    const notice = operations.createNotice('document_extraction_partial', 'partial', { metadata: { warnings: [{ code: 'rows', used: 100 }] } });
+    const locator = { type: 'table', range: { firstRow: 1, lastRow: 100 } };
+    const trace = operations.createTrace({ folderId: 'folder', operation, notices: [notice], manifest: { sources: [{ documentId: 'doc', locator }] } });
+    operation.steps[0].detail.counters.documents = 9;
+    operation.status = 'failed';
+    notice.metadata.warnings[0].used = 0;
+    locator.range.lastRow = 999;
+    assert.equal(trace.operation.status, 'completed');
+    assert.equal(trace.operation.steps[0].detail.counters.documents, 2);
+    assert.equal(trace.notices[0].metadata.warnings[0].used, 100);
+    assert.equal(trace.sources[0].locator.range.lastRow, 100);
+    assert.doesNotMatch(JSON.stringify(trace), /SECRET LEASE|leaseToken|leaseOwner/);
+});

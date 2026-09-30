@@ -61,6 +61,8 @@ document.addEventListener('alpine:init', () => {
         isStartingFolderOperation: false,
         operationOwnerId: `tab_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`,
         operationRuns: new Map(),
+        reasoningOpenState: {},
+        traceOpenState: {},
         p1Queue: null,
         inputPrompt: '',
         isStreaming: false,
@@ -999,6 +1001,8 @@ document.addEventListener('alpine:init', () => {
                 const section = body ? [header, body].join('\n\n') : sourceEntries.length ? [header, ...sourceEntries.map(item => item.block)].join('\n\n') : '';
                 const included = Boolean(section);
                 if (included) sections.push(section);
+                const warnings = document.metadata?.extraction?.warnings || [];
+                if (included && warnings.length) notices.push(window.SealarcaOperations.createNotice('document_extraction_partial', 'partial', { documentId: document.id, metadata: { name: document.name, warnings } }));
                 citationDocuments.push({ ...document, sourceMap: sentSourceMap });
                 const sourceIds = sourceEntries.map(item => item.source?.id).filter(Boolean);
                 const characterCount = body.length || sourceEntries.reduce((sum, item) => sum + item.characterCount, 0);
@@ -1210,6 +1214,10 @@ document.addEventListener('alpine:init', () => {
             let text = this.t('dossier.notices.' + String(notice?.code || 'unknown_notice'));
             if (text === 'dossier.notices.' + String(notice?.code || 'unknown_notice')) text = this.t('dossier.notices.unknown_notice');
             for (const [key, value] of Object.entries(notice?.metadata || {})) text = text.replaceAll('{' + key + '}', String(value));
+            if (notice?.code === 'document_extraction_partial' && Array.isArray(notice.metadata?.warnings)) {
+                const details = this.extractionWarnings({ metadata: { extraction: { warnings: notice.metadata.warnings } } });
+                if (details.length) text += ' ' + details.join(' · ');
+            }
             return text;
         },
 
@@ -1302,8 +1310,13 @@ document.addEventListener('alpine:init', () => {
                                 && profile.inputFingerprint === window.SealarcaP1.fingerprintDocument(documentsById.get(profile.documentId)))
                             .map(profile => [profile.documentId, profile]));
                         const validProfiles = documents.map(document => profileByDocument.get(document.id)).filter(Boolean);
-                        const missingCount = documents.filter(document => !profileByDocument.has(document.id)).length;
-                        if (missingCount) operationNotices.push(window.SealarcaOperations.createNotice('profiles_missing', 'partial', { metadata: { count: missingCount } }));
+                        const missingDocuments = documents.filter(document => !profileByDocument.has(document.id));
+                        if (missingDocuments.length) operationNotices.push(window.SealarcaOperations.createNotice('profiles_missing', 'partial', { metadata: { count: missingDocuments.length } }));
+                        for (const document of missingDocuments) operationNotices.push(window.SealarcaOperations.createNotice('document_profile_missing', 'partial', { documentId: document.id, metadata: { name: document.name } }));
+                        for (const document of documents) {
+                            const warnings = document.metadata?.extraction?.warnings || [];
+                            if (profileByDocument.has(document.id) && warnings.length) operationNotices.push(window.SealarcaOperations.createNotice('document_extraction_partial', 'partial', { documentId: document.id, metadata: { name: document.name, warnings } }));
+                        }
 
                         await setStep('context', 'completed', { kind: 'profiles', count: validProfiles.length, total: documents.length });
                         operation = await setStep('analyze', 'running', { kind: 'profiles', count: validProfiles.length, total: documents.length });
@@ -1379,7 +1392,7 @@ document.addEventListener('alpine:init', () => {
                             selectedResult = { divergences: comparison.divergences.slice(0, 100), analyzedDocumentCount: comparison.analyzedDocumentCount, documentCount: comparison.documentCount };
                         }
 
-                        const traceDocuments = documents.map(document => {
+                        const traceDocuments = requestedDocuments.map(document => {
                             const profile = profileByDocument.get(document.id);
                             const fields = [
                                 ...(profile?.references || []),
@@ -1425,15 +1438,15 @@ document.addEventListener('alpine:init', () => {
                         const resultCount = Object.values(selectedResult).find(Array.isArray)?.length || 0;
                         await setStep('save', 'running', { kind: 'results', count: resultCount, sources: traceSources.length });
 
+                        const status = operationNotices.some(notice => notice.severity === 'partial') ? 'partial' : 'completed';
+                        const completedSteps = window.SealarcaOperations.updateOperationStep(operation, 'save', 'completed', { kind: 'results', count: resultCount, sources: traceSources.length });
                         const trace = window.SealarcaOperations.createTrace({
                             folderId,
-                            operation,
+                            operation: { ...completedSteps, status, completedAt: Date.now() },
                             manifest: { mode: 'local_profiles', characters: 0, documents: traceDocuments, sources: traceSources },
                             notices: operationNotices,
                             model: null
                         });
-                        const status = operationNotices.some(notice => notice.severity === 'partial') ? 'partial' : 'completed';
-                        const completedSteps = window.SealarcaOperations.updateOperationStep(operation, 'save', 'completed', { kind: 'results', count: resultCount, sources: traceSources.length });
                         const completed = await window.sealarcaDb.completeLocalOperation({
                             operationId: operation.id,
                             ownerId,
@@ -1451,12 +1464,13 @@ document.addEventListener('alpine:init', () => {
                             if (status === 'partial') this.showToast(this.noticeText(operationNotices[operationNotices.length - 1]), 6000);
                         }
                     } catch (error) {
+                        const terminalSteps = status => operation.steps.map(step => step.status === 'running' ? { ...step, status, completedAt: Date.now() } : step);
                         if (error?.name === 'AbortError' || controller.signal.aborted) {
                             operationNotices.push(window.SealarcaOperations.createNotice('operation_cancelled', 'info'));
-                            await window.sealarcaDb.updateOperationIfOwner(operation.id, ownerId, leaseToken, { status: 'cancelled', notices: operationNotices });
+                            await window.sealarcaDb.updateOperationIfOwner(operation.id, ownerId, leaseToken, { status: 'cancelled', steps: terminalSteps('cancelled'), notices: operationNotices });
                         } else if (error?.name !== 'OperationLeaseError') {
                             operationNotices.push(window.SealarcaOperations.createNotice('operation_failed', 'error'));
-                            await window.sealarcaDb.updateOperationIfOwner(operation.id, ownerId, leaseToken, { status: 'failed', notices: operationNotices });
+                            await window.sealarcaDb.updateOperationIfOwner(operation.id, ownerId, leaseToken, { status: 'failed', steps: terminalSteps('failed'), notices: operationNotices });
                             this.showToast(this.t('dossier.operationFailed'), 6000);
                         }
                     } finally {
@@ -1613,8 +1627,8 @@ document.addEventListener('alpine:init', () => {
                 get visibleCitations() { return (message.citations || []).map(citation => ({ ...citation, open() { app.openProfileReference(citation.documentId, citation.sourceId); } })); },
                 get hasTrace() { return Boolean(trace); },
                 get traceDocuments() { return traceDocuments; },
-                get traceVisible() { return decorated._showTrace !== false; },
-                get traceToggleLabel() { return app.t(decorated._showTrace ? 'dossier.hideTrace' : 'dossier.showTrace'); },
+                get traceVisible() { return Object.hasOwn(app.traceOpenState, message.id) ? app.traceOpenState[message.id] : decorated._showTrace !== false; },
+                get traceToggleLabel() { return app.t(this.traceVisible ? 'dossier.hideTrace' : 'dossier.showTrace'); },
                 get traceSummaryLabel() {
                     return app.t('dossier.traceSummary')
                         .replaceAll('{documents}', String(trace?.context?.documentCount || 0))
@@ -1628,11 +1642,11 @@ document.addEventListener('alpine:init', () => {
                         text: app.noticeText(notice)
                     }));
                 },
-                get reasoningLabel() { return app.t(decorated._showReasoning ? 'reasoning.hide' : 'reasoning.show'); },
-                get reasoningVisible() { return decorated._showReasoning !== false; },
+                get reasoningLabel() { return app.t(this.reasoningVisible ? 'reasoning.hide' : 'reasoning.show'); },
+                get reasoningVisible() { return Object.hasOwn(app.reasoningOpenState, message.id) ? app.reasoningOpenState[message.id] : decorated._showReasoning !== false; },
                 get renderedContent() { return app.renderMarkdown(message.content); },
-                toggleReasoning() { decorated._showReasoning = !decorated._showReasoning; },
-                toggleTrace() { decorated._showTrace = !decorated._showTrace; },
+                toggleReasoning() { app.reasoningOpenState = { ...app.reasoningOpenState, [message.id]: !decorated.reasoningVisible }; },
+                toggleTrace() { app.traceOpenState = { ...app.traceOpenState, [message.id]: !decorated.traceVisible }; },
                 copy() { app.copyText(message.content); }
             };
             return decorated;
@@ -1794,9 +1808,10 @@ document.addEventListener('alpine:init', () => {
             this.scrollToBottom();
 
             // 5. Lancer le streaming
+            const requestModel = this.selectedModel;
             const streamPromise = window.sealarcaApi.streamResponse({
                 apiKey: this.apiKey,
-                model: this.selectedModel,
+                model: requestModel,
                 messages: apiMessages,
                 instructions: systemPrompt,
                 onChunk: ({ type, chunk, fullText, fullReasoning }) => {
@@ -1823,7 +1838,7 @@ document.addEventListener('alpine:init', () => {
                                 role: 'assistant',
                                 content: finalText || (metadata.interrupted ? (metadata.reason === 'timeout' ? this.t('app.streamTimeout') : this.t('app.streamInterrupted')) : '(Réponse vide)'),
                                 reasoning: finalReasoning || null,
-                                model: this.selectedModel,
+                                model: requestModel,
                                 interrupted: Boolean(metadata.interrupted),
                                 interruptReason: metadata.reason || null,
                                 citations: window.SealarcaP1.extractCitations(finalText, documentContext.citationDocuments),
@@ -1839,7 +1854,7 @@ document.addEventListener('alpine:init', () => {
                                     ...documentContext.notices,
                                     ...(metadata.interrupted ? [window.SealarcaOperations.createNotice('response_interrupted', 'partial', { metadata: { reason: metadata.reason || 'cancelled' } })] : [])
                                 ],
-                                model: this.selectedModel
+                                model: requestModel
                             }) : null;
                             if (trace) {
                                 assistantMsg.traceId = trace.id;

@@ -21,6 +21,8 @@ Le programme n’utilise ni serveur applicatif intermédiaire, ni SDK analytique
 
 ## Fonctionnalités actuelles
 
+**1.2.0 — Analyse de dossier & nouvelle expérience documentaire**
+
 - **Dossiers/projets** regroupant plusieurs conversations et une bibliothèque documentaire réutilisable.
 - **Historique local des conversations** avec filtrage des titres dans la barre latérale.
 - **Conservation des documents** dans IndexedDB : Blob original, Markdown canonique, type MIME, extension, taille, empreinte SHA-256 lorsque Web Crypto est disponible, métadonnées d’extraction et carte de provenance.
@@ -32,6 +34,7 @@ Le programme n’utilise ni serveur applicatif intermédiaire, ni SDK analytique
 - **Espace documentaire** avec recherche plein texte locale, aperçu du Markdown canonique, références de source, téléchargement du fichier original, vue d’ensemble du dossier et export de cette vue en `index.md`.
 - **Analyse du dossier** à partir des fiches locales à jour : synthèse, chronologie, parties, obligations, montants, comparaisons et différences apparentes. Les résultats renvoient aux sources et sont à vérifier. Ces actions n’envoient pas le contenu des documents ; la génération d’une fiche reste une action explicite par document.
 - **Journal des opérations et traces** avec étapes, avis, annulation/reprise lorsque possible et références de provenance pour les réponses de chat et analyses locales. Le réglage du contexte peut être défini par dossier.
+- **Résultats partiels explicites** : documents sans fiche à jour ou avec extraction incomplète signalés individuellement ; sources et étapes conservées dans la trace historique même après modification du dossier. Un événement peut renvoyer à plusieurs pages et documents.
 - **Fiches documentaires générées par IA** (résumé, personnes, organisations, dates et éléments importants) traitées par une file persistante de deux workers avec reprise, annulation, déduplication et récupération après interruption. La génération d’une fiche envoie le Markdown du document au modèle Sealarca sélectionné.
 - **Intégration Responses API** : découverte dynamique via `GET /v1/models` ; requêtes streaming et non-streaming via `POST /v1/responses`, avec `store: false`, délai glissant de 120 secondes, reprises HTTP et annulation chat plus fiches.
 - **Réponse en streaming** avec tiroir de raisonnement lorsque la passerelle émet les événements de résumé de raisonnement pris en charge.
@@ -47,6 +50,8 @@ Le programme n’utilise ni serveur applicatif intermédiaire, ni SDK analytique
 - Les jobs de fiche transmettent le Markdown du document concerné au modèle Sealarca sélectionné.
 - Les appels API applicatifs ciblent `https://api.sealarca.ch/v1`. La CSP autorise aussi les origines locales de développement sur `localhost` et `127.0.0.1`.
 - « Local » et « sans CDN » décrivent le chargement, l’analyse, l’indexation et le stockage ; les opérations IA ne fonctionnent pas hors connexion.
+- La comparaison locale regroupe les dates, montants, obligations et éléments importants extraits sous un même libellé, conserve toutes leurs références et reconnaît les dates équivalentes. Les différences restent apparentes et à vérifier ; la détection générale de contradictions s’effectue dans le chat avec le contexte documentaire choisi.
+- Les capacités des modèles ne sont prises en compte que si la passerelle les décrit explicitement ; une capacité absente reste inconnue, sans déduction depuis le nom du modèle.
 
 ## Démarrage rapide
 

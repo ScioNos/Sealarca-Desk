@@ -1,5 +1,7 @@
 # Sealarca Desk v1.2.0
 
+**Analyse de dossier & nouvelle expérience documentaire**
+
 Release date: **September 29, 2026**.
 
 This release adds a local multi-document dossier workspace. It preserves the 1.1.0 browser workspace and upgrades IndexedDB from v5 to v6 without deleting or rewriting existing records. The API endpoint and protocol remain unchanged.
@@ -12,10 +14,19 @@ This release adds a local multi-document dossier workspace. It preserves the 1.1
 - Add per-folder manual/automatic chat-context overrides, clear document/profile status chips, profile amount/obligation details, and a richer `index.md` dossier export.
 - Upgrade IndexedDB to v6 with `operations` and `traces` stores; export/import format is `6.0`. Existing profiles created with the v1 prompt fingerprint are marked stale and can be regenerated explicitly.
 - Expand profile schema/prompt v2 to capture sourced entities, dates, events, amounts, obligations, and important items. Keep the existing 120,000-character/100-source profile bounds and 250,000-character chat-context limit.
+- Preserve every source of a consolidated event and give different events on the same page distinct stable identifiers. Expose dates and events in the local structured dossier model.
+- Mark results based on partially extracted documents as partial, retain extraction notices and identify each missing or stale profile. Documents omitted by the operation limit remain listed in the trace.
+- Snapshot operation steps and nested notice/locator metadata in historical traces. Record the model actually used even if the selection changes during streaming.
+- Keep reasoning and source drawers reactive through message-ID state, including after reloading a conversation. Only reasoning delivered by the API is displayed.
+- Prepare model-capability access from explicit boolean gateway metadata, with unknown capabilities remaining unknown. No model-name inference or independent catalogue is introduced.
 
 ## Verification
 
 The release checks cover v5-to-v6 migration, export/import, cross-tab operation leases, trace persistence, source filtering, dossier aggregation, profile normalization, the five interface languages, and the full `npm run check` suite.
+
+The September 30 audit adds regression coverage for multi-source events on the same page, partial extraction, historical traces after document/profile changes, real Alpine CSP drawer reactivity, cancellation during IndexedDB reads, interrupted chat provenance, and explicit model capabilities. The runtime remains a static browser application; no fork transport, external tools, corpus, pairing, or Python service is included.
+
+The folder analysis is deterministic aggregation of current local profiles. Comparisons group extracted dates, amounts, obligations and important items by their labels and flag apparent differences; equivalent calendar dates are grouped and all source references are retained. Arbitrary semantic contradictions and missing facts still require the user's document-grounded chat and review. Version 1.3 can use the retained document/source IDs, locators and operation snapshots for claim verification; no claim scoring is implemented in 1.2.
 
 ## Download and verification
 

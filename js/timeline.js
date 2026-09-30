@@ -39,7 +39,7 @@
         const documentsById = new Map((documents || []).map(document => [document.id, document]));
         const validProfiles = (profiles || []).filter(profile => profile && profile.status === 'valid' && documentsById.has(profile.documentId));
         const eventsByKey = new Map();
-        const entities = { people: [], organizations: [], amounts: [], obligations: [], documents: [], sources: [] };
+        const entities = { people: [], organizations: [], dates: [], events: [], amounts: [], obligations: [], documents: [], sources: [] };
         const entityKeys = new Map();
 
         const addEntity = (kind, value, profile, document, sourceIds = [], references = []) => {
@@ -73,23 +73,25 @@
             const parsedDate = canonicalDate(date);
             const key = (parsedDate?.key || normalize(date)) + '|' + normalize(label);
             const sourceIds = Array.isArray(item.sourceIds) ? item.sourceIds : (item.references || []).map(reference => reference.sourceId).filter(Boolean);
-            const entrySource = sourceIds[0] || null;
-            const source = sourceFor(document, entrySource, item.references?.[0]?.label);
+            const sources = [...new Set(sourceIds)].map(sourceId => sourceFor(document, sourceId, item.references?.find(reference => reference.sourceId === sourceId)?.label));
+            if (!sources.length) sources.push(sourceFor(document, null, item.references?.[0]?.label));
             if (eventsByKey.has(key)) {
                 const event = eventsByKey.get(key);
-                if (!event.sources.some(existing => existing.documentId === source.documentId && existing.sourceId === source.sourceId)) event.sources.push(source);
+                for (const source of sources) {
+                    if (!event.sources.some(existing => existing.documentId === source.documentId && existing.sourceId === source.sourceId)) event.sources.push(source);
+                }
                 if (!event.kinds.includes(kind)) event.kinds.push(kind);
                 return;
             }
             eventsByKey.set(key, {
-                id: 'event_' + profile.documentId + '_' + (entrySource || normalize(date + label).replace(/[^a-z0-9]+/g, '_')),
+                id: 'event_' + encodeURIComponent(key),
                 date,
                 dateOrder: parsedDate?.stamp ?? Number.MAX_SAFE_INTEGER,
                 label,
                 details: String(item.details || '').trim(),
                 kinds: [kind],
                 confidence: 'unverified-extraction',
-                sources: [source]
+                sources
             });
         };
 
@@ -117,6 +119,8 @@
 
         const timeline = [...eventsByKey.values()].sort((left, right) => left.dateOrder - right.dateOrder || left.label.localeCompare(right.label));
         for (const event of timeline) delete event.dateOrder;
+        entities.events = timeline;
+        entities.dates = timeline.filter(event => event.date);
         return { timeline, entities, analyzedDocumentCount: validProfiles.length, documentCount: (documents || []).length };
     }
 
@@ -132,14 +136,18 @@
             if (!groups.has(key)) groups.set(key, { id: key, field, label, values: [] });
             const group = groups.get(key);
             const document = documentsById.get(profile.documentId);
-            let valueEntry = group.values.find(entry => normalize(entry.value) === normalize(detail));
+            const valueKey = value => (field === 'date' || (field === 'obligation' && item.deadline)) ? canonicalDate(value)?.key || normalize(value) : normalize(value);
+            let valueEntry = group.values.find(entry => valueKey(entry.value) === valueKey(detail));
             if (!valueEntry) {
                 valueEntry = { value: detail, documents: [] };
                 group.values.push(valueEntry);
             }
             const sourceIds = Array.isArray(item.sourceIds) ? item.sourceIds : (item.references || []).map(reference => reference.sourceId).filter(Boolean);
-            const source = sourceFor(document, sourceIds[0] || null, item.references?.[0]?.label);
-            if (!valueEntry.documents.some(entry => entry.documentId === document.id)) valueEntry.documents.push({ ...source, documentId: document.id, documentName: document.name });
+            const sources = [...new Set(sourceIds)].map(sourceId => sourceFor(document, sourceId, item.references?.find(reference => reference.sourceId === sourceId)?.label));
+            if (!sources.length) sources.push(sourceFor(document, null, item.references?.[0]?.label));
+            for (const source of sources) {
+                if (!valueEntry.documents.some(entry => entry.documentId === document.id && entry.sourceId === source.sourceId)) valueEntry.documents.push(source);
+            }
         };
         for (const profile of validProfiles) {
             for (const item of profile.importantDates || []) add(profile, 'date', item, item.date || item.label);

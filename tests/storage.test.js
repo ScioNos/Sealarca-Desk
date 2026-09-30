@@ -151,6 +151,10 @@ test('migration v5→v6 ajoute les stores sans réécrire les enregistrements ex
         conversations: [{ id: 'conversation_v5', folderId: 'folder_v5', title: 'Historique', createdAt: stamp, updatedAt: stamp }],
         messages: [{ id: 'message_v5', conversationId: 'conversation_v5', role: 'assistant', content: 'Conservé', createdAt: stamp }],
         documents: [{ id: 'document_v5', folderId: 'folder_v5', name: 'v5.txt', markdown: 'Contenu intact' }],
+        documentChunks: [{ id: 'chunk_v5', documentId: 'document_v5', folderId: 'folder_v5', text: 'Chunk intact' }],
+        documentProfiles: [{ documentId: 'document_v5', folderId: 'folder_v5', summary: 'Fiche intacte', status: 'valid', inputFingerprint: 'legacy' }],
+        settings: [{ key: 'sealarca_context_mode', value: 'automatic' }],
+        roles: [{ id: 'custom_v5', kind: 'custom', name: 'Mode intact' }],
         processingJobs: [{ id: 'job_v5', documentId: 'document_v5', folderId: 'folder_v5', status: 'running', leaseOwner: 'worker', leaseToken: 'live', leaseExpiresAt: Date.now() + 60000 }]
     }, 5);
     const db = loadDb(factory);
@@ -158,6 +162,10 @@ test('migration v5→v6 ajoute les stores sans réécrire les enregistrements ex
     assert.equal((await db.getDocument('document_v5')).markdown, 'Contenu intact');
     assert.equal((await db.getMessages('conversation_v5'))[0].content, 'Conservé');
     assert.equal((await db.getProcessingJob('job_v5')).status, 'running');
+    assert.equal((await db.getDocumentProfile('document_v5')).summary, 'Fiche intacte');
+    assert.equal((await db.getDocumentChunks('document_v5'))[0].text, 'Chunk intact');
+    assert.equal(await db.getSetting('sealarca_context_mode'), 'automatic');
+    assert.equal((await db.getRoles()).find(role => role.id === 'custom_v5').name, 'Mode intact');
     assert.deepEqual(await db.getOperations('folder_v5'), []);
     assert.deepEqual(await db.getTraces('folder_v5'), []);
 });

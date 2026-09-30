@@ -6,6 +6,7 @@ const vm = require('node:vm');
 const { JSDOM } = require('jsdom');
 const createDOMPurify = require('dompurify');
 const { marked } = require('marked');
+const { IDBFactory, IDBKeyRange } = require('fake-indexeddb');
 
 const appSource = fs.readFileSync(path.join(__dirname, '..', 'js', 'app.js'), 'utf8');
 const operationsSource = fs.readFileSync(path.join(__dirname, '..', 'js', 'operations.js'), 'utf8');
@@ -51,6 +52,154 @@ function configureApi(app) {
     app.scrollToBottom = () => {};
     app.decorateMessage = message => message;
 }
+
+async function loadStoredApp() {
+    const context = { window: {}, indexedDB: new IDBFactory(), IDBKeyRange, console };
+    vm.createContext(context);
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', 'db.js'), 'utf8'), context);
+    const db = context.window.sealarcaDb;
+    await db.init();
+    const loaded = loadApp({ sealarcaDb: db });
+    loaded.window.SealarcaP1 = {
+        fingerprintDocument: document => 'fp:' + document.hash,
+        sourceReference: (document, source) => `${document.name} — page ${source.locator.page}`,
+        extractCitations: () => []
+    };
+    loaded.app.t = key => key;
+    loaded.app.showToast = () => {};
+    loaded.app.activeFolderId = 'folder_default';
+    return { ...loaded, db };
+}
+
+test('une extraction partielle reste visible dans le résultat et sa trace historique après modification du dossier', async () => {
+    const { app, db } = await loadStoredApp();
+    const document = await db.saveDocument({
+        id: 'partial', folderId: 'folder_default', name: 'table.pdf', hash: 'old-hash', markdown: 'Available text',
+        metadata: { extraction: { warnings: [{ code: 'pdf_pages', pages: '2' }] } },
+        sourceMap: [{ id: 'p1', markdownStart: 0, markdownEnd: 14, locator: { type: 'pdf-page', page: 1 } }]
+    });
+    await db.saveDocumentProfile({ documentId: document.id, folderId: document.folderId, status: 'valid', inputFingerprint: 'fp:old-hash', summary: 'Historical summary', events: [{ date: '2026-02-12', label: 'Signature', sourceIds: ['p1'], references: [{ sourceId: 'p1', label: 'table.pdf — page 1' }] }] });
+    await db.saveDocument({ id: 'unprocessed', folderId: 'folder_default', name: 'missing.pdf', markdown: 'Not analyzed' });
+    await app.runFolderAnalysis('timeline');
+    const operation = (await db.getOperations('folder_default'))[0];
+    const before = await db.getTrace(operation.resultRef.traceId);
+    assert.equal(operation.status, 'partial');
+    assert.ok(operation.notices.some(notice => notice.code === 'document_profile_missing' && notice.documentId === 'unprocessed'));
+    assert.ok(operation.notices.some(notice => notice.code === 'document_extraction_partial' && notice.documentId === 'partial'));
+    assert.equal(before.operation.status, 'partial');
+    assert.equal(before.operation.steps.every(step => step.status === 'completed'), true);
+    assert.equal(before.sources[0].locator.page, 1);
+    assert.equal(operation.resultRef.snapshot.timeline[0].label, 'Signature');
+    const context = app.buildDocumentContext([document]);
+    assert.equal(context.notices[0].code, 'document_extraction_partial');
+    assert.equal(context.notices[0].documentId, document.id);
+    await db.saveDocument({ ...document, name: 'renamed.pdf', hash: 'new-hash', sourceMap: [{ id: 'p1', locator: { page: 99 } }] });
+    await db.saveDocumentProfile({ documentId: document.id, folderId: document.folderId, status: 'valid', inputFingerprint: 'fp:new-hash', events: [{ date: '2026-01-01', label: 'Changed event' }] });
+    assert.deepEqual(await db.getTrace(before.id), before);
+    await app.loadFolderOperations();
+    assert.equal(app.folderOperations[0].traceDocuments.find(item => item.id === 'partial').name, 'table.pdf');
+    assert.match(app.folderOperations[0].resultLines[0].text, /Signature/);
+});
+
+test('l’annulation pendant une lecture IndexedDB termine les étapes actives et empêche un résultat tardif', async () => {
+    const { app, db } = await loadStoredApp();
+    await db.saveDocument({ id: 'cancel', folderId: 'folder_default', name: 'cancel.txt', markdown: 'Text' });
+    let entered;
+    let release;
+    const reading = new Promise(resolve => { entered = resolve; });
+    const pendingRead = new Promise(resolve => { release = resolve; });
+    db.getDocumentProfiles = async () => { entered(); await pendingRead; return []; };
+    const running = app.runFolderAnalysis('summary');
+    await reading;
+    const operationId = (await db.getOperations('folder_default'))[0].id;
+    const cancelled = app.cancelFolderOperation(operationId);
+    release();
+    await Promise.all([running, cancelled]);
+    const operation = await db.getOperation(operationId);
+    assert.equal(operation.status, 'cancelled');
+    assert.equal(operation.steps.some(step => step.status === 'running'), false);
+    assert.equal(operation.steps.find(step => step.id === 'context').status, 'cancelled');
+    assert.equal(operation.resultRef, null);
+    assert.deepEqual(await db.getTraces('folder_default'), []);
+    assert.equal(app.operationRuns.size, 0);
+});
+
+test('les documents omis par la limite restent identifiables dans la trace de l’opération partielle', async () => {
+    const { app, db } = await loadStoredApp();
+    await Promise.all(Array.from({ length: 101 }, (_, index) => db.saveDocument({ id: 'doc-' + index, folderId: 'folder_default', name: 'document-' + index + '.txt', markdown: 'Text' })));
+    await app.runFolderAnalysis('summary');
+    const operation = (await db.getOperations('folder_default'))[0];
+    const trace = await db.getTrace(operation.resultRef.traceId);
+    assert.equal(operation.status, 'partial');
+    assert.equal(operation.documentIds.length, 101);
+    assert.equal(trace.documents.length, 101);
+    assert.equal(trace.context.omittedDocumentCount, 101);
+    assert.equal(operation.steps.find(step => step.id === 'prepare').detail.count, 100);
+    assert.ok(trace.notices.some(notice => notice.code === 'document_limit_reached' && notice.metadata.limit === 100));
+});
+
+test('les tiroirs de raisonnement et de trace réagissent avec Alpine CSP et conservent leur état par message', async () => {
+    const { app: rawApp } = loadApp();
+    const dom = new JSDOM('<!doctype html><body></body>', { runScripts: 'outside-only', url: 'https://desk.test/' });
+    dom.window.eval(fs.readFileSync(path.join(__dirname, '..', 'vendor', 'alpine-csp.min.js'), 'utf8'));
+    const Alpine = dom.window.Alpine;
+    const app = Alpine.reactive(rawApp);
+    app.t = key => key;
+    const trace = { documents: [{ id: 'doc', included: true }], sources: [], context: {} };
+    const message = Alpine.reactive(app.decorateMessage({ id: 'message', role: 'assistant', reasoning: 'API reasoning', trace }));
+    const other = app.decorateMessage({ id: 'other', reasoning: 'Other API reasoning', trace });
+    let visible;
+    let label;
+    const effect = Alpine.effect(() => { visible = [message.reasoningVisible, message.traceVisible]; label = message.reasoningLabel; });
+    try {
+        assert.deepEqual(visible, [true, true]);
+        message.toggleReasoning();
+        message.toggleTrace();
+        await Promise.resolve();
+        assert.deepEqual(visible, [false, false]);
+        assert.equal(label, 'reasoning.show');
+        assert.equal(other.reasoningVisible, true);
+        assert.equal(other.traceVisible, true);
+        const reloaded = app.decorateMessage({ id: 'message', reasoning: 'API reasoning', trace });
+        assert.equal(reloaded.reasoningVisible, false);
+        assert.equal(reloaded.traceVisible, false);
+        reloaded.toggleReasoning();
+        await Promise.resolve();
+        assert.equal(message.reasoningVisible, true);
+    } finally {
+        Alpine.release(effect);
+        dom.window.close();
+    }
+});
+
+test('le chat persiste le modèle et le contexte réellement envoyés malgré un changement pendant le streaming', async () => {
+    const { app, window, db } = await loadStoredApp();
+    configureApi(app);
+    app.activeFolderId = 'folder_default';
+    app.activeConversationId = 'conversation';
+    await db.saveConversation({ id: 'conversation', folderId: 'folder_default', title: 'Historical chat' }, { allowCreate: true });
+    const document = await db.saveDocument({ id: 'sent', folderId: 'folder_default', name: 'sent.pdf', markdown: 'Sent text', sourceMap: [{ id: 'p1', markdownStart: 0, markdownEnd: 9, locator: { type: 'pdf-page', page: 1 } }] });
+    app.selectedDocumentIds = [document.id];
+    app.inputPrompt = 'Question';
+    app.loadConversations = async () => {};
+    let request;
+    window.sealarcaApi = { async streamResponse(options) {
+        request = options;
+        app.selectedModel = 'changed-model';
+        await db.saveDocument({ ...document, name: 'changed.pdf', markdown: 'Changed text' });
+        await options.onDone('Partial answer', 'API summary', { interrupted: true, reason: 'cancelled' });
+    } };
+    await app.sendMessage();
+    const answer = (await db.getMessages('conversation')).find(message => message.role === 'assistant');
+    const trace = await db.getTrace(answer.traceId);
+    assert.equal(answer.model, request.model);
+    assert.equal(trace.model, 'test-model');
+    assert.equal(answer.content, 'Partial answer');
+    assert.equal(trace.documents[0].name, 'sent.pdf');
+    assert.equal(trace.context.characters, request.messages.at(-1).content.length - 'Question'.length);
+    assert.equal(trace.notices.at(-1).code, 'response_interrupted');
+    assert.doesNotMatch(JSON.stringify(trace), /Sent text|Changed text/);
+});
 
 test('le chat bloque sans persistance ni appel API au-delà de 250 000 caractères', async () => {
     let apiCalls = 0;
@@ -266,9 +415,15 @@ test('le réglage de contexte par dossier ne modifie pas la préférence génér
     await app.setFolderContextModeOverride({ currentTarget: { value: 'automatic' } });
     assert.equal(savedFolder.documentSettings.contextMode, 'automatic');
     assert.equal(app.contextMode, 'manual');
+    assert.equal(app.effectiveContextMode, 'automatic');
     await app.setContextMode('manual');
     assert.equal(savedFolder.documentSettings.contextMode, 'manual');
     assert.equal(app.contextMode, 'manual');
+    app.contextMode = 'automatic';
+    assert.equal(app.effectiveContextMode, 'manual');
+    await app.setFolderContextModeOverride({ currentTarget: { value: '' } });
+    assert.equal(savedFolder.documentSettings.contextMode, null);
+    assert.equal(app.effectiveContextMode, 'automatic');
 });
 
 test('le Markdown utilisateur ne peut pas reprendre une classe ou un identifiant de l’interface', () => {

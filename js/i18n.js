@@ -758,3 +758,14 @@ const PROFILE_DATE_LABELS = {
 for (const [language, label] of Object.entries(PROFILE_DATE_LABELS)) {
     SEALARCA_I18N[language].documents.lastProfileDate = label;
 }
+
+const DOCUMENT_NOTICE_LABELS = {
+    fr: { document_profile_missing: 'Document non traité, fiche absente ou périmée : {name}.', document_extraction_partial: 'Extraction partielle du document : {name}. Le résultat repose sur le texte disponible.' },
+    de: { document_profile_missing: 'Dokument nicht verarbeitet, Profil fehlt oder ist veraltet: {name}.', document_extraction_partial: 'Dokument teilweise extrahiert: {name}. Das Ergebnis beruht auf dem verfügbaren Text.' },
+    it: { document_profile_missing: 'Documento non elaborato, scheda assente o obsoleta: {name}.', document_extraction_partial: 'Estrazione parziale del documento: {name}. Il risultato si basa sul testo disponibile.' },
+    en: { document_profile_missing: 'Document not processed; profile missing or outdated: {name}.', document_extraction_partial: 'Partially extracted document: {name}. The result uses the available text.' },
+    es: { document_profile_missing: 'Documento no procesado, ficha ausente o desactualizada: {name}.', document_extraction_partial: 'Extracción parcial del documento: {name}. El resultado se basa en el texto disponible.' }
+};
+for (const [language, labels] of Object.entries(DOCUMENT_NOTICE_LABELS)) {
+    Object.assign(SEALARCA_I18N[language].dossier.notices, labels);
+}

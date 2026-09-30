@@ -114,7 +114,7 @@ test('les nouvelles chaînes de configuration et d’espace documentaire existen
         }
         for (const key of ['summary', 'timeline', 'entities', 'obligations', 'compare', 'divergences', 'amounts']) assert.equal(typeof context.window.SEALARCA_I18N[language].dossier.actions[key], 'string', `${language}.dossier.actions.${key}`);
         for (const key of ['pending', 'running', 'completed', 'partial', 'failed', 'cancelled', 'ready', 'not_analyzed']) assert.equal(typeof context.window.SEALARCA_I18N[language].dossier.status[key], 'string', `${language}.dossier.status.${key}`);
-        assert.equal(typeof context.window.SEALARCA_I18N[language].dossier.notices.document_deleted, 'string', `${language}.dossier.notices.document_deleted`);
+        for (const key of ['document_deleted', 'document_profile_missing', 'document_extraction_partial']) assert.equal(typeof context.window.SEALARCA_I18N[language].dossier.notices[key], 'string', `${language}.dossier.notices.${key}`);
         for (const key of ['documents', 'profiles', 'results']) assert.equal(typeof context.window.SEALARCA_I18N[language].dossier.stepDetails[key], 'string', `${language}.dossier.stepDetails.${key}`);
         const prerequisites = context.window.SEALARCA_I18N[language].settings.prerequisites;
         assert.equal(Array.isArray(prerequisites), true, `${language}.settings.prerequisites`);
@@ -154,6 +154,8 @@ test('l’expérience de dossier consolide les fiches localement et garde des tr
     assert.doesNotMatch(operations + timeline, /\bmcp\b|researchStream|OpenCaseLaw/i);
     assert.doesNotMatch(html, /mcp-plan|mcp-drawer/);
     assert.doesNotMatch(html, /x-text="t\(/);
+    const runtime = ['js', 'css'].flatMap(directory => fs.readdirSync(path.join(root, directory)).filter(file => /\.(js|css)$/.test(file)).map(file => read(directory + '/' + file))).join('\n') + html;
+    assert.doesNotMatch(runtime, /SealarcaMcp|McpClient|ResearchRun|OpenCaseLaw|mcp-|research-|opencaselaw-|tool_choice|function_call|pairing/i);
 });
 
 test('le premier écran explique le modèle et le rôle sans promesse géographique', () => {
